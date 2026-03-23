@@ -416,6 +416,26 @@ Workflow behavior notes:
 
 ---
 
+## Baseline Rotation Procedure
+
+Use this flow for intentional runtime/quality re-baselines:
+
+1. **Open a dedicated baseline PR**
+   - include only baseline artifact updates and runbook/policy updates
+   - do not bundle feature changes
+2. **Approval signal**
+   - require explicit reviewer acknowledgement in the PR (for example comment: `baseline-rotation-approved`)
+   - merge only after this acknowledgement is present
+3. **Artifact naming convention**
+   - keep promoted stable files under `ci/runtime-quality/baselines/<profile>.json`
+   - attach timestamped evidence artifacts in CI as `artifacts/quality/quality_gate_<profile>.json`
+   - if storing historical baseline snapshots, use `baseline_<profile>_<YYYYMMDD>.json`
+4. **Policy sync**
+   - update `ci/runtime-quality/quality_gate_policy.json` only when thresholds or baseline paths intentionally change
+   - record rationale in PR description (model/runtime change, platform drift, or corpus change)
+
+---
+
 ## Notes
 
 - `startup_mode=strict` is recommended for pre-release validation and CI gates.
