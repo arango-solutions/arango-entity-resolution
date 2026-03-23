@@ -105,9 +105,15 @@ jobs:
       - name: Start ephemeral ArangoDB for quality gate
         if: ${{ matrix.run_quality_gate }}
         run: |
-          docker run -d --name runtime-gate-arango -e ARANGO_ROOT_PASSWORD=openSesame -p 8529:8529 arangodb:3.11
+          ARANGO_PASSWORD="$(python - <<'PY'
+          import secrets
+          print(secrets.token_urlsafe(24))
+          PY
+          )"
+          echo "ARANGO_PASSWORD=$ARANGO_PASSWORD" >> "$GITHUB_ENV"
+          docker run -d --name runtime-gate-arango -e ARANGO_ROOT_PASSWORD="$ARANGO_PASSWORD" -p 8529:8529 arangodb:3.11
           for i in {1..30}; do
-            if curl -fsS -u root:openSesame "http://127.0.0.1:8529/_api/version" >/dev/null; then
+            if curl -fsS -u "root:${ARANGO_PASSWORD}" "http://127.0.0.1:8529/_api/version" >/dev/null; then
               echo "ArangoDB is ready"
               exit 0
             fi
@@ -149,7 +155,7 @@ jobs:
             --host 127.0.0.1 \
             --port 8529 \
             --username root \
-            --password openSesame \
+            --password "${ARANGO_PASSWORD}" \
             --database _system \
             --registry-file artifacts/runtime/runtime_registry_${{ matrix.platform_tag }}.json \
             --label "${QUALITY_LABEL}" \
