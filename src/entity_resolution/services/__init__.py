@@ -14,6 +14,7 @@ from .runtime_compare_report_service import RuntimeCompareReportService
 from .runtime_benchmark_service import RuntimeBenchmarkService
 from .runtime_quality_gate_service import RuntimeQualityGateService
 from .runtime_quality_benchmark_service import RuntimeQualityBenchmarkService
+from .runtime_quality_policy_service import RuntimeQualityPolicyService
 
 __all__ = [
     'EmbeddingService',
@@ -33,4 +34,5 @@ __all__ = [
     'RuntimeBenchmarkService',
     'RuntimeQualityGateService',
     'RuntimeQualityBenchmarkService',
+    'RuntimeQualityPolicyService',
 ]

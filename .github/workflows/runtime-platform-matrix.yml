@@ -92,34 +92,13 @@ jobs:
       - name: Validate quality policy and artifact references
         run: |
           python - <<'PY'
-          import json
-          from pathlib import Path
+          from entity_resolution.services.runtime_quality_policy_service import (
+              RuntimeQualityPolicyService,
+          )
 
-          policy_path = Path("ci/runtime-quality/quality_gate_policy.json")
-          policy = json.loads(policy_path.read_text(encoding="utf-8"))
-          profiles = policy.get("profiles", {})
-          required_profiles = ("linux-cpu", "apple-silicon", "linux-gpu")
-
-          for profile in required_profiles:
-              if profile not in profiles:
-                  raise SystemExit(f"Missing profile in quality gate policy: {profile}")
-              cfg = profiles[profile]
-
-              for field in ("quality_corpus", "quality_baseline_metrics"):
-                  value = cfg.get(field)
-                  if not value:
-                      raise SystemExit(f"Profile {profile} missing required field: {field}")
-                  target = Path(value)
-                  if not target.exists():
-                      raise SystemExit(
-                          f"Profile {profile} references missing file in {field}: {target}"
-                      )
-
-              for numeric_field in ("quality_cosine_drift_max", "quality_topk_overlap_min"):
-                  if cfg.get(numeric_field) is None:
-                      raise SystemExit(
-                          f"Profile {profile} missing required numeric field: {numeric_field}"
-                      )
+          RuntimeQualityPolicyService.validate_policy_file(
+              "ci/runtime-quality/quality_gate_policy.json"
+          )
           PY
 
       - name: Start ephemeral ArangoDB for quality gate
