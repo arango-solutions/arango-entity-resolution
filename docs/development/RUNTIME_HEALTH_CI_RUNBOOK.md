@@ -404,6 +404,8 @@ Workflow behavior notes:
 - push/PR triggers are path-filtered to runtime benchmark/gate workflow, code, tests, and runbook files
 - runtime matrix artifacts are best-effort (`if-no-files-found: ignore`) with `7` day retention
 - each lane writes `artifacts/runtime/runtime_env_<platform>.json` with platform/runtime evidence (`python_version`, system/machine, torch availability + cuda/mps flags, and onnxruntime providers)
+- quality-gate thresholds and pinned corpus/baselines are sourced from `ci/runtime-quality/quality_gate_policy.json`
+- default `linux-cpu` lane executes corpus-driven `runtime-health-gate` with pinned artifacts and emits `artifacts/quality/quality_gate_linux-cpu.json`
 
 `runtime-health-gate` quality output includes `quality_gate.current_source`:
 - `metrics_file` when using `--quality-current-metrics`

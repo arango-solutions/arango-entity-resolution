@@ -240,7 +240,7 @@ Phase 0 acceptance summary:
 - [DONE] artifact export for health snapshots and compare outputs
 - [DONE] first-run bootstrap path for missing baselines
 - [TODO] full workload benchmark harness for representative model inference throughput/latency
-- [TODO] quality drift/retrieval stability automated gates tied to production model sets
+- [IN PROGRESS] quality drift/retrieval stability automated gates tied to production model sets (policy-backed corpus gate scaffold added via `ci/runtime-quality/quality_gate_policy.json` and runtime matrix workflow)
 - [IN PROGRESS] platform CI matrix expansion for dedicated Apple Silicon and Linux GPU runners (workflow scaffold added: `.github/workflows/runtime-platform-matrix.yml`; self-hosted lane activation pending runner availability)
 
 Recommended handoff to Phase 1:

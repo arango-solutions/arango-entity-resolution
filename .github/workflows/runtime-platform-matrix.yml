@@ -10,6 +10,7 @@ on:
       - "tests/test_cli.py"
       - "tests/test_runtime_*.py"
       - "docs/development/RUNTIME_HEALTH_CI_RUNBOOK.md"
+      - "ci/runtime-quality/**"
   push:
     branches: ["main"]
     paths:
@@ -19,6 +20,7 @@ on:
       - "tests/test_cli.py"
       - "tests/test_runtime_*.py"
       - "docs/development/RUNTIME_HEALTH_CI_RUNBOOK.md"
+      - "ci/runtime-quality/**"
   workflow_dispatch:
     inputs:
       enable_self_hosted:
@@ -48,14 +50,17 @@ jobs:
             runs_on: '["ubuntu-latest"]'
             self_hosted: false
             platform_tag: linux-cpu
+            run_quality_gate: true
           - name: apple-silicon
             runs_on: '["self-hosted","macOS","ARM64"]'
             self_hosted: true
             platform_tag: apple-silicon
+            run_quality_gate: false
           - name: linux-gpu
             runs_on: '["self-hosted","linux","x64","gpu","nvidia"]'
             self_hosted: true
             platform_tag: linux-gpu
+            run_quality_gate: false
 
     steps:
       - name: Checkout
@@ -83,6 +88,72 @@ jobs:
         run: |
           pytest -q tests/test_runtime_benchmark_service.py
           pytest -q tests/test_cli.py -k "runtime_health_benchmark or runtime_health_gate"
+
+      - name: Start ephemeral ArangoDB for quality gate
+        if: ${{ matrix.run_quality_gate }}
+        run: |
+          docker run -d --name runtime-gate-arango -e ARANGO_ROOT_PASSWORD=openSesame -p 8529:8529 arangodb:3.11
+          for i in {1..30}; do
+            if curl -fsS -u root:openSesame "http://127.0.0.1:8529/_api/version" >/dev/null; then
+              echo "ArangoDB is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "ArangoDB did not become ready in time" >&2
+          exit 1
+
+      - name: Resolve quality gate policy for lane
+        if: ${{ matrix.run_quality_gate }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          policy = json.loads(Path("ci/runtime-quality/quality_gate_policy.json").read_text(encoding="utf-8"))
+          profile = "${{ matrix.platform_tag }}"
+          cfg = policy["profiles"][profile]
+
+          env_path = Path(os.environ["GITHUB_ENV"])
+          with env_path.open("a", encoding="utf-8") as fh:
+              fh.write(f"QUALITY_LABEL={cfg['label']}\n")
+              fh.write(f"QUALITY_CORPUS={cfg['quality_corpus']}\n")
+              fh.write(f"QUALITY_BASELINE={cfg['quality_baseline_metrics']}\n")
+              fh.write(f"QUALITY_MODEL_NAME={cfg['quality_model_name']}\n")
+              fh.write(f"QUALITY_DEVICE={cfg['quality_device']}\n")
+              fh.write(f"QUALITY_BATCH_SIZE={cfg['quality_batch_size']}\n")
+              fh.write(f"QUALITY_COSINE_DRIFT_MAX={cfg['quality_cosine_drift_max']}\n")
+              fh.write(f"QUALITY_TOPK_OVERLAP_MIN={cfg['quality_topk_overlap_min']}\n")
+          PY
+
+      - name: Run corpus-driven runtime health gate
+        if: ${{ matrix.run_quality_gate }}
+        run: |
+          mkdir -p artifacts/runtime artifacts/quality
+          arango-er runtime-health-gate \
+            -c config/er_config.example.yaml \
+            --host 127.0.0.1 \
+            --port 8529 \
+            --username root \
+            --password openSesame \
+            --database _system \
+            --registry-file artifacts/runtime/runtime_registry_${{ matrix.platform_tag }}.json \
+            --label "${QUALITY_LABEL}" \
+            --bootstrap-baseline \
+            --quality-corpus "${QUALITY_CORPUS}" \
+            --quality-model-name "${QUALITY_MODEL_NAME}" \
+            --quality-device "${QUALITY_DEVICE}" \
+            --quality-batch-size "${QUALITY_BATCH_SIZE}" \
+            --quality-baseline-metrics "${QUALITY_BASELINE}" \
+            --quality-cosine-drift-max "${QUALITY_COSINE_DRIFT_MAX}" \
+            --quality-topk-overlap-min "${QUALITY_TOPK_OVERLAP_MIN}" \
+            --fail-on-regression > artifacts/quality/quality_gate_${{ matrix.platform_tag }}.json
+
+      - name: Stop ephemeral ArangoDB
+        if: ${{ always() && matrix.run_quality_gate }}
+        run: |
+          docker rm -f runtime-gate-arango || true
 
       - name: Collect runtime environment evidence
         if: always()
@@ -140,3 +211,5 @@ jobs:
           path: |
             .pytest_cache
             artifacts/runtime/runtime_env_${{ matrix.platform_tag }}.json
+            artifacts/runtime/runtime_registry_${{ matrix.platform_tag }}.json
+            artifacts/quality/quality_gate_${{ matrix.platform_tag }}.json

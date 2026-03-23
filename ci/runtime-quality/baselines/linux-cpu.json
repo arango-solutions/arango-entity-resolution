@@ -1,0 +1,8 @@
+{
+  "metadata": {
+    "profile": "linux-cpu",
+    "corpus_name": "ci_runtime_quality_v1"
+  },
+  "cosine_drift": 0.08,
+  "topk_overlap": 0.75
+}

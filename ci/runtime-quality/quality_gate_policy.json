@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "profiles": {
+    "linux-cpu": {
+      "label": "ci-linux-cpu",
+      "quality_corpus": "ci/runtime-quality/corpus/runtime_quality_corpus.json",
+      "quality_baseline_metrics": "ci/runtime-quality/baselines/linux-cpu.json",
+      "quality_model_name": "all-MiniLM-L6-v2",
+      "quality_device": "cpu",
+      "quality_batch_size": 16,
+      "quality_cosine_drift_max": 0.2,
+      "quality_topk_overlap_min": 0.5
+    },
+    "apple-silicon": {
+      "label": "ci-apple-silicon",
+      "quality_corpus": "ci/runtime-quality/corpus/runtime_quality_corpus.json",
+      "quality_baseline_metrics": "ci/runtime-quality/baselines/apple-silicon.json",
+      "quality_model_name": "all-MiniLM-L6-v2",
+      "quality_device": "auto",
+      "quality_batch_size": 16,
+      "quality_cosine_drift_max": 0.2,
+      "quality_topk_overlap_min": 0.5
+    },
+    "linux-gpu": {
+      "label": "ci-linux-gpu",
+      "quality_corpus": "ci/runtime-quality/corpus/runtime_quality_corpus.json",
+      "quality_baseline_metrics": "ci/runtime-quality/baselines/linux-gpu.json",
+      "quality_model_name": "all-MiniLM-L6-v2",
+      "quality_device": "auto",
+      "quality_batch_size": 16,
+      "quality_cosine_drift_max": 0.2,
+      "quality_topk_overlap_min": 0.5
+    }
+  }
+}

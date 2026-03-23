@@ -1,0 +1,45 @@
+{
+  "metadata": {
+    "name": "ci_runtime_quality_v1",
+    "description": "Pinned CI corpus for runtime-health-gate quality checks."
+  },
+  "cosine_pairs": [
+    {
+      "id": "pair_1",
+      "text_a": "Acme Corporation 123 Main Street New York NY",
+      "text_b": "Acme Corp 123 Main St New York New York",
+      "expected_cosine": 0.98
+    },
+    {
+      "id": "pair_2",
+      "text_a": "Globex LLC 11 Elm Road Austin TX",
+      "text_b": "Initech 99 Market Street San Francisco CA",
+      "expected_cosine": 0.1
+    }
+  ],
+  "retrieval_queries": [
+    {
+      "id": "query_1",
+      "query": "Acme Corp New York 123 Main",
+      "top_k": 2,
+      "expected_topk": [
+        "c1",
+        "c2"
+      ],
+      "candidates": [
+        {
+          "id": "c1",
+          "text": "Acme Corporation 123 Main Street New York NY"
+        },
+        {
+          "id": "c2",
+          "text": "Acme Corp 123 Main St New York New York"
+        },
+        {
+          "id": "c3",
+          "text": "Other Company 44 Sunset Blvd Los Angeles CA"
+        }
+      ]
+    }
+  ]
+}
