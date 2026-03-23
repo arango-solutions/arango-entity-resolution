@@ -409,6 +409,7 @@ Workflow behavior notes:
 - workflow fails fast if policy profiles are missing or if referenced corpus/baseline files do not exist
 - runtime matrix unit checks include policy validator tests (`test_runtime_quality_policy_service.py`, `test_runtime_quality_policy_ci.py`)
 - linux-cpu quality-gate lane generates an ephemeral ArangoDB password at runtime (no hardcoded credential in repository)
+- prefer `ARANGO_ROOT_PASSWORD` as canonical for Docker-root auth; `ARANGO_PASSWORD` is supported only as a fallback alias
 
 `runtime-health-gate` quality output includes `quality_gate.current_source`:
 - `metrics_file` when using `--quality-current-metrics`
