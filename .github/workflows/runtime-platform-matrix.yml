@@ -88,6 +88,7 @@ jobs:
         run: |
           pytest -q tests/test_runtime_benchmark_service.py
           pytest -q tests/test_cli.py -k "runtime_health_benchmark or runtime_health_gate"
+          pytest -q tests/test_runtime_quality_policy_service.py tests/test_runtime_quality_policy_ci.py
 
       - name: Validate quality policy and artifact references
         run: |

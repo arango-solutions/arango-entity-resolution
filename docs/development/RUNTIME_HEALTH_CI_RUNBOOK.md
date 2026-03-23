@@ -407,6 +407,7 @@ Workflow behavior notes:
 - quality-gate thresholds and pinned corpus/baselines are sourced from `ci/runtime-quality/quality_gate_policy.json`
 - default `linux-cpu` lane executes corpus-driven `runtime-health-gate` with pinned artifacts and emits `artifacts/quality/quality_gate_linux-cpu.json`
 - workflow fails fast if policy profiles are missing or if referenced corpus/baseline files do not exist
+- runtime matrix unit checks include policy validator tests (`test_runtime_quality_policy_service.py`, `test_runtime_quality_policy_ci.py`)
 
 `runtime-health-gate` quality output includes `quality_gate.current_source`:
 - `metrics_file` when using `--quality-current-metrics`
