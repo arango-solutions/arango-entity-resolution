@@ -231,6 +231,27 @@ For address resolution specifically, there is a dedicated `AddressERPipeline` th
 - **ONNX Runtime** — faster CPU inference for embedding workloads
 - **Incremental Resolver** — real-time single-record matching without batch re-run
 
+### Web UI (Optional)
+
+A browser-based interface for analysts and data stewards who need to interact with entity resolution results without writing code.
+
+```bash
+pip install "arango-entity-resolution[ui]"
+arango-er ui --port 8787 --open
+```
+
+| Screen | What it does |
+|--------|-------------|
+| **Dashboard** | Operational overview — document counts, cluster stats, pending reviews, pipeline history |
+| **Review Queue** | Side-by-side record comparison with field-level similarity scores, LLM reasoning display, and one-click human verdicts (keyboard shortcuts: M/N/S) |
+| **Cluster Browser** | Paginated cluster list with quality scores, drill-down to interactive graph visualization (React Flow) |
+| **Pipeline Runner** | Configure and execute pipelines with real-time WebSocket progress tracking |
+| **Config Builder** | Visual pipeline configuration with advisor tool integration (strategy recommendations, weight estimation, variant simulation) |
+| **Entity Resolver** | Interactive single-record resolution for testing |
+| **Golden Records** | Field-level provenance, source ranking, and conflict resolution |
+
+The UI calls the same Python services as the CLI and MCP server — no new resolution logic. See [UI Design](docs/architecture/ENTITY_RESOLUTION_UI.md) for architecture details.
+
 ## Configuration
 
 Pipelines are driven by YAML (or JSON) configuration:

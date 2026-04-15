@@ -59,6 +59,11 @@ test = [
     "pytest-cov>=4.1.0",
     "pytest-mock>=3.0.0",
 ]
+ui = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "websockets>=14.0",
+]
 dev = [
     "black>=23.11.0",
     "flake8>=6.1.0",

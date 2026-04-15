@@ -4,7 +4,8 @@ Configuration-driven ER pipeline.
 Runs complete entity resolution pipelines from YAML/JSON configuration files.
 """
 
-from typing import Dict, Any, Optional, Union
+from typing import Callable, Dict, Any, Optional, Union
+from datetime import datetime
 from pathlib import Path
 from arango.database import StandardDatabase
 import logging
@@ -98,7 +99,10 @@ class ConfigurableERPipeline:
         }
         self._embedding_preflight_stats: Optional[Dict[str, Any]] = None
     
-    def run(self) -> Dict[str, Any]:
+    def run(
+        self,
+        on_progress: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> Dict[str, Any]:
         """
         Run complete ER pipeline based on configuration.
         
@@ -108,6 +112,10 @@ class ConfigurableERPipeline:
         3. Similarity (based on config.similarity)
         4. Edge creation (based on config.edges)
         5. Clustering (based on config.clustering)
+        
+        Args:
+            on_progress: Optional callback invoked at stage transitions with
+                a dict containing ``type``, ``stage``, and ``timestamp`` keys.
         
         Returns:
             Results dictionary with metrics for each phase:
@@ -152,6 +160,8 @@ class ConfigurableERPipeline:
 
         # Optional phase 0: resolve embedding runtime/provider from config.
         if self.config.embedding:
+            if on_progress:
+                on_progress({"type": "stage_start", "stage": "embedding", "timestamp": datetime.utcnow().isoformat()})
             self.logger.info("Phase 0: Embedding runtime setup...")
             embedding_start = time.time()
             results['embedding'] = self._setup_embedding_runtime()
@@ -163,6 +173,8 @@ class ConfigurableERPipeline:
                 results['embedding'].get('runtime'),
                 results['embedding'].get('resolved_provider', results['embedding'].get('resolved_device')),
             )
+            if on_progress:
+                on_progress({"type": "stage_complete", "stage": "embedding", "result": results['embedding'], "timestamp": datetime.utcnow().isoformat()})
         else:
             results['embedding'] = {
                 'enabled': False,
@@ -175,6 +187,8 @@ class ConfigurableERPipeline:
         
         # Standard ER pipeline
         # Phase 1: Blocking
+        if on_progress:
+            on_progress({"type": "stage_start", "stage": "blocking", "timestamp": datetime.utcnow().isoformat()})
         self.logger.info("Phase 1: Blocking...")
         blocking_start = time.time()
         candidate_pairs = self.run_blocking()
@@ -188,8 +202,12 @@ class ConfigurableERPipeline:
             results['blocking']['embedding_preflight'] = self._embedding_preflight_stats
             results['embedding']['preflight'] = self._embedding_preflight_stats
         self.logger.info(f"[OK] Found {len(candidate_pairs):,} candidate pairs")
+        if on_progress:
+            on_progress({"type": "stage_complete", "stage": "blocking", "result": results['blocking'], "timestamp": datetime.utcnow().isoformat()})
         
         # Phase 2: Similarity
+        if on_progress:
+            on_progress({"type": "stage_start", "stage": "similarity", "timestamp": datetime.utcnow().isoformat()})
         if candidate_pairs and self.config.similarity:
             self.logger.info("Phase 2: Similarity computation...")
             similarity_start = time.time()
@@ -211,8 +229,12 @@ class ConfigurableERPipeline:
                 'runtime_seconds': 0.0,
                 'active_learning': self._active_learning_stats.copy(),
             }
+        if on_progress:
+            on_progress({"type": "stage_complete", "stage": "similarity", "result": results['similarity'], "timestamp": datetime.utcnow().isoformat()})
         
         # Phase 3: Edge Creation
+        if on_progress:
+            on_progress({"type": "stage_start", "stage": "edges", "timestamp": datetime.utcnow().isoformat()})
         if matches:
             self.logger.info("Phase 3: Edge creation...")
             edge_start = time.time()
@@ -229,8 +251,12 @@ class ConfigurableERPipeline:
                 'edges_created': 0,
                 'runtime_seconds': 0.0
             }
+        if on_progress:
+            on_progress({"type": "stage_complete", "stage": "edges", "result": results['edges'], "timestamp": datetime.utcnow().isoformat()})
 
         # Phase 4: Clustering — only run when edges actually exist
+        if on_progress:
+            on_progress({"type": "stage_start", "stage": "clustering", "timestamp": datetime.utcnow().isoformat()})
         edges_created = results.get('edges', {}).get('edges_created', 0)
         if self.config.clustering.store_results and edges_created > 0:
             self.logger.info("Phase 4: Clustering...")
@@ -248,6 +274,8 @@ class ConfigurableERPipeline:
                 'clusters_found': 0,
                 'runtime_seconds': 0.0
             }
+        if on_progress:
+            on_progress({"type": "stage_complete", "stage": "clustering", "result": results['clustering'], "timestamp": datetime.utcnow().isoformat()})
         
         results['total_runtime_seconds'] = round(time.time() - start_time, 2)
         
@@ -266,6 +294,19 @@ class ConfigurableERPipeline:
         self.logger.info(f"Edges Created: {results['edges']['edges_created']:,}")
         self.logger.info(f"Clusters Found: {results['clustering']['clusters_found']:,}")
         self.logger.info(f"Total Runtime: {results['total_runtime_seconds']:.2f}s")
+
+        if on_progress:
+            on_progress({
+                "type": "pipeline_complete",
+                "total_runtime_seconds": results['total_runtime_seconds'],
+                "summary": {
+                    "candidate_pairs": results['blocking']['candidate_pairs'],
+                    "matches_found": results['similarity']['matches_found'],
+                    "edges_created": results['edges']['edges_created'],
+                    "clusters_found": results['clustering']['clusters_found'],
+                },
+                "timestamp": datetime.utcnow().isoformat(),
+            })
         
         return results
 

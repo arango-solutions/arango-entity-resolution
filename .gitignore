@@ -130,5 +130,8 @@ docs/customer/**
 # Not actively maintained or tested in v2.0+
 legacy/
 
+# UI frontend build artifacts (rebuilt from ui/ source)
+src/entity_resolution/ui/static/
+
 # Runtime artifacts (models, benchmarks, caches)
 artifacts/

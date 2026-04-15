@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Web UI** (`[ui]` optional extra) — optional browser-based interface for entity resolution
+  workflows, launched with `arango-er ui`. Includes Review Queue (human-in-the-loop match
+  review with keyboard shortcuts), Cluster Browser (paginated list with interactive React Flow
+  graph visualization), Pipeline Runner (WebSocket-driven live progress), Config Builder
+  (visual pipeline configuration with advisor tool integration), Entity Resolver (interactive
+  single-record resolution), Golden Record Manager (field-level provenance and conflict
+  resolution), and Export Center. Backend is FastAPI wrapping existing services — no new
+  resolution logic. Install with `pip install "arango-entity-resolution[ui]"`.
+- **`FeedbackStore.query_verdicts()`** — paginated, filterable AQL queries over the feedback
+  collection with bind-variable safety.
+- **`FeedbackStore.count_by_status()`** — grouped verdict counts by decision.
+- **`FeedbackStore.pending_review_count()`** — count of LLM verdicts awaiting human review.
+- **`ConfigurableERPipeline.run(on_progress=...)`** — optional callback parameter for
+  stage-by-stage progress reporting during pipeline execution.
+
 ## [3.5.1] - 2026-03-30
 
 ### Security

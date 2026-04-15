@@ -162,6 +162,97 @@ class FeedbackStore:
         )
         return {"by_decision": list(cursor), "total": self.db.collection(self.collection).count()}
 
+    # ------------------------------------------------------------------
+    # Extended query API (used by UI backend)
+    # ------------------------------------------------------------------
+
+    _SORT_FIELDS = {"score": "doc.score", "created_at": "doc.ts", "confidence": "doc.confidence"}
+
+    def query_verdicts(
+        self,
+        status: Optional[str] = None,
+        score_min: Optional[float] = None,
+        score_max: Optional[float] = None,
+        source: Optional[str] = None,
+        sort_by: str = "score",
+        sort_order: str = "asc",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Paginated, filterable query over the feedback collection.
+
+        Returns ``{"items": [...], "total": int, "limit": int, "offset": int}``.
+        """
+        filters: List[str] = []
+        bind_vars: Dict[str, Any] = {"@col": self.collection}
+
+        if status is not None:
+            filters.append("doc.decision == @status")
+            bind_vars["status"] = status
+        if score_min is not None:
+            filters.append("doc.score >= @score_min")
+            bind_vars["score_min"] = score_min
+        if score_max is not None:
+            filters.append("doc.score <= @score_max")
+            bind_vars["score_max"] = score_max
+        if source is not None:
+            filters.append("doc.source == @source")
+            bind_vars["source"] = source
+
+        filter_clause = (" FILTER " + " AND ".join(filters)) if filters else ""
+        sort_field = self._SORT_FIELDS.get(sort_by, "doc.score")
+        direction = "DESC" if sort_order == "desc" else "ASC"
+
+        count_aql = f"FOR doc IN @@col{filter_clause} COLLECT WITH COUNT INTO cnt RETURN cnt"
+        total = next(iter(self.db.aql.execute(count_aql, bind_vars=bind_vars)), 0)
+
+        data_aql = (
+            f"FOR doc IN @@col{filter_clause}"
+            f" SORT {sort_field} {direction}"
+            f" LIMIT @off, @lim"
+            f" RETURN doc"
+        )
+        bind_vars_data = {**bind_vars, "off": offset, "lim": limit}
+        items = list(self.db.aql.execute(data_aql, bind_vars=bind_vars_data))
+
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+    def count_by_status(self) -> Dict[str, int]:
+        """Return verdict counts grouped by decision.
+
+        Returns a dict like ``{"match": 5, "no_match": 3, "uncertain": 1}``.
+        """
+        cursor = self.db.aql.execute(
+            "FOR doc IN @@col COLLECT decision = doc.decision"
+            " WITH COUNT INTO cnt RETURN {decision, count: cnt}",
+            bind_vars={"@col": self.collection},
+        )
+        return {row["decision"]: row["count"] for row in cursor}
+
+    def pending_review_count(self) -> int:
+        """Return count of LLM verdicts that have no human correction.
+
+        A verdict is *pending review* if ``source == 'llm'`` and there is no
+        document with the same ``key_a`` / ``key_b`` pair where
+        ``source == 'human'``.
+        """
+        cursor = self.db.aql.execute(
+            """
+            LET human_pairs = (
+                FOR h IN @@col
+                    FILTER h.source == 'human'
+                    RETURN CONCAT(h.key_a, '|', h.key_b)
+            )
+            FOR doc IN @@col
+                FILTER doc.source == 'llm'
+                FILTER CONCAT(doc.key_a, '|', doc.key_b) NOT IN human_pairs
+                COLLECT WITH COUNT INTO cnt
+                RETURN cnt
+            """,
+            bind_vars={"@col": self.collection},
+        )
+        return next(iter(cursor), 0)
+
 
 # ---------------------------------------------------------------------------
 # ThresholdOptimizer

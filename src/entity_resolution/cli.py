@@ -96,7 +96,8 @@ def _get_db_from_options(
     if host is None and port is None and username is None and password is None:
         return get_database(args["database"])
 
-    client = ArangoClient(hosts=f"http://{args['host']}:{args['port']}")
+    from entity_resolution.mcp.connection import get_arango_hosts
+    client = ArangoClient(hosts=get_arango_hosts(args["host"], args["port"]))
     db = client.db(args["database"], username=args["username"], password=args["password"])
     db.properties()
     return db
@@ -1332,6 +1333,78 @@ def embedding_benchmark(collection, fields, model, limit, batch_size, **conn_kwa
     except Exception as e:
         click.echo(click.style(f"Error: {e}", fg="red"), err=True)
         sys.exit(1)
+
+
+@main.command()
+@connection_options
+@click.option("--serve-port", type=int, default=8787, show_default=True, help="Port for the UI server.")
+@click.option("--serve-host", default="127.0.0.1", show_default=True, help="Host for the UI server.")
+@click.option("--open", "auto_open", is_flag=True, help="Open browser after startup.")
+@click.option("--dev", is_flag=True, help="Enable CORS for localhost:5173 (Vite dev server).")
+@click.option("--readonly", is_flag=True, help="Disable mutation endpoints.")
+def ui(database, host, port, username, password, serve_port, serve_host, auto_open, dev, readonly):
+    """Launch the Entity Resolution web UI."""
+    try:
+        from entity_resolution.ui.app import create_app
+        import uvicorn
+    except ImportError:
+        click.echo(
+            click.style(
+                'The UI extra is not installed. Install it with:\n\n'
+                '  pip install "arango-entity-resolution[ui]"\n',
+                fg="red",
+            ),
+            err=True,
+        )
+        sys.exit(1)
+
+    args = _resolve_connection_args(database, host, port, username, password)
+    conn_params = {
+        "host": args["host"],
+        "port": args["port"],
+        "username": args["username"],
+        "password": args["password"],
+        "database": args["database"],
+    }
+
+    db = None
+    try:
+        db = _get_db_from_options(database, host, port, username, password)
+    except Exception as e:
+        click.echo(click.style(f"Warning: Could not connect to ArangoDB: {e}", fg="yellow"), err=True)
+        click.echo(click.style("Starting UI without database — API calls will return errors until a connection is available.", fg="yellow"))
+
+    import os as _os
+    alias_env = _os.getenv("ARANGO_COLLECTION_ALIASES", "").strip()
+    collection_aliases: dict[str, str] = {}
+    if alias_env:
+        for pair in alias_env.split(","):
+            if "=" in pair:
+                k, v = pair.split("=", 1)
+                collection_aliases[k.strip()] = v.strip()
+
+    allowed_origins = ["http://localhost:5173"] if dev else None
+    app = create_app(
+        db,
+        readonly=readonly,
+        allowed_origins=allowed_origins,
+        connection_params=conn_params,
+        collection_aliases=collection_aliases,
+    )
+
+    if auto_open:
+        import threading
+        import time
+        import webbrowser
+
+        def _open_browser():
+            time.sleep(1.5)
+            webbrowser.open(f"http://{serve_host}:{serve_port}")
+
+        threading.Thread(target=_open_browser, daemon=True).start()
+
+    click.echo(click.style(f"Starting Entity Resolution UI on http://{serve_host}:{serve_port}", fg="green", bold=True))
+    uvicorn.run(app, host=serve_host, port=serve_port)
 
 
 if __name__ == '__main__':
