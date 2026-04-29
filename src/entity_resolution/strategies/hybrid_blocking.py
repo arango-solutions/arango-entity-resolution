@@ -227,14 +227,21 @@ class HybridBlockingStrategy(BlockingStrategy):
     def _build_hybrid_query(self) -> str:
         """
         Build the AQL query for hybrid BM25 + Levenshtein blocking.
-        
+
+        The query uses a per-entity subquery so that
+        ``SORT combined_score DESC`` and ``LIMIT @limit_per_entity``
+        apply *per source document* rather than globally. Earlier
+        versions placed the SORT and LIMIT at the outer level of a
+        nested ``FOR``; in AQL that ordered/capped the flattened result
+        stream across all (d1, d2) iterations, so the strategy returned
+        only the global top-K combined-score pairs rather than the
+        intended top-K per source entity.
+
         Returns:
             AQL query string
         """
-        # Start building query
         query_parts = [f"FOR d1 IN {self.collection}"]
-        
-        # Add filter conditions for d1
+
         if self.filters:
             for field_name, field_filters in self.filters.items():
                 if field_name in self.search_fields:
@@ -243,91 +250,101 @@ class HybridBlockingStrategy(BlockingStrategy):
                     if 'min_length' in field_filters:
                         min_len = field_filters['min_length']
                         query_parts.append(f"    FILTER LENGTH(d1.{field_name}) > {min_len}")
-            
-            # Blocking field filter
+
             if self.blocking_field and self.blocking_field in self.filters:
                 blocking_filters = self.filters[self.blocking_field]
                 if blocking_filters.get('not_null'):
                     query_parts.append(f"    FILTER d1.{self.blocking_field} != null")
-        
-        # Add SEARCH clause for d2 using ArangoSearch
-        query_parts.append(f"    FOR d2 IN {self.search_view}")
-        
-        # Build SEARCH conditions - search on first field for BM25
-        # (Note: In production, you might want to search on multiple fields)
+
         primary_field = list(self.search_fields.keys())[0]
-        search_conditions = [
-            f"ANALYZER(",
-            f"    PHRASE(d2.{primary_field}, d1.{primary_field}, \"{self.analyzer}\"),",
-            f"    \"{self.analyzer}\"",
-            f")"
+
+        # Per-entity subquery: candidates for this specific d1.
+        sub_parts = [
+            f"    LET candidates = (",
+            f"        FOR d2 IN {self.search_view}",
+            f"            SEARCH ANALYZER(",
+            f"                PHRASE(d2.{primary_field}, d1.{primary_field}, \"{self.analyzer}\"),",
+            f"                \"{self.analyzer}\"",
+            f"            )",
+            f"            LET bm25_score = BM25(d2)",
+            f"            FILTER bm25_score > @bm25_threshold",
         ]
-        query_parts.append("    SEARCH " + "\n        ".join(search_conditions))
-        
-        # Calculate BM25 score
-        query_parts.append("    LET bm25_score = BM25(d2)")
-        
-        # Filter by BM25 threshold (initial filtering)
-        query_parts.append("    FILTER bm25_score > @bm25_threshold")
-        
-        # Filter by blocking field if specified
         if self.blocking_field:
-            query_parts.append(f"    FILTER d2.{self.blocking_field} == d1.{self.blocking_field}")
-        
-        # Ensure we don't match a document with itself
-        query_parts.append("    FILTER d1._key < d2._key")
-        
-        # Compute Levenshtein similarity for each field
+            sub_parts.append(
+                f"            FILTER d2.{self.blocking_field} == d1.{self.blocking_field}"
+            )
+        sub_parts.append("            FILTER d1._key < d2._key")
+
         levenshtein_parts = []
         field_scores_parts = []
-        
         for field, weight in self.search_fields.items():
-            # Compute normalized Levenshtein similarity for this field
-            query_parts.append(f"    LET val1_{field} = UPPER(TRIM(d1.{field} || \"\"))")
-            query_parts.append(f"    LET val2_{field} = UPPER(TRIM(d2.{field} || \"\"))")
-            query_parts.append(f"    LET lev_{field} = LEVENSHTEIN_DISTANCE(val1_{field}, val2_{field})")
-            query_parts.append(f"    LET max_len_{field} = MAX([LENGTH(val1_{field}), LENGTH(val2_{field})])")
-            query_parts.append(f"    LET score_{field} = max_len_{field} > 0 ? (1.0 - lev_{field} / max_len_{field}) : 0")
-            
+            sub_parts.append(f"            LET val1_{field} = UPPER(TRIM(d1.{field} || \"\"))")
+            sub_parts.append(f"            LET val2_{field} = UPPER(TRIM(d2.{field} || \"\"))")
+            sub_parts.append(
+                f"            LET lev_{field} = LEVENSHTEIN_DISTANCE(val1_{field}, val2_{field})"
+            )
+            sub_parts.append(
+                f"            LET max_len_{field} = MAX([LENGTH(val1_{field}), LENGTH(val2_{field})])"
+            )
+            sub_parts.append(
+                f"            LET score_{field} = max_len_{field} > 0 ? "
+                f"(1.0 - lev_{field} / max_len_{field}) : 0"
+            )
             levenshtein_parts.append(f"(score_{field} * {weight})")
             field_scores_parts.append(f'"{field}": score_{field}')
-        
-        # Compute weighted Levenshtein score
-        query_parts.append(f"    LET levenshtein_score = {' + '.join(levenshtein_parts)}")
-        
-        # Compute combined score (BM25 for ranking, Levenshtein for quality)
-        query_parts.append("    LET combined_score = (bm25_score * @bm25_weight) + (levenshtein_score * @levenshtein_weight)")
-        
-        # Build field_scores object
-        query_parts.append(f"    LET field_scores = {{{', '.join(field_scores_parts)}}}")
-        
-        # Filter by Levenshtein threshold (final quality gate)
-        query_parts.append("    FILTER levenshtein_score >= @levenshtein_threshold")
-        
-        # Sort by combined score (BM25 + Levenshtein)
-        query_parts.append("    SORT combined_score DESC")
-        
-        # Limit per entity
-        query_parts.append("    LIMIT @limit_per_entity")
-        
-        # Build return object
-        return_fields = [
-            "doc1_key: d1._key",
+
+        sub_parts.append(
+            f"            LET levenshtein_score = {' + '.join(levenshtein_parts)}"
+        )
+        sub_parts.append(
+            "            LET combined_score = (bm25_score * @bm25_weight) "
+            "+ (levenshtein_score * @levenshtein_weight)"
+        )
+        sub_parts.append(
+            f"            LET field_scores = {{{', '.join(field_scores_parts)}}}"
+        )
+        sub_parts.append("            FILTER levenshtein_score >= @levenshtein_threshold")
+        sub_parts.append("            SORT combined_score DESC")
+        sub_parts.append("            LIMIT @limit_per_entity")
+
+        sub_return_fields = [
             "doc2_key: d2._key",
             "levenshtein_score: levenshtein_score",
             "bm25_score: bm25_score",
             "combined_score: combined_score",
             "field_scores: field_scores",
-            f"search_fields: {list(self.search_fields.keys())}",
-            'method: "hybrid_blocking"'
         ]
-        
         if self.blocking_field:
-            return_fields.append(f"blocking_field_value: d1.{self.blocking_field}")
-        
-        return_clause = "    RETURN {\n        " + ",\n        ".join(return_fields) + "\n    }"
-        query_parts.append(return_clause)
-        
+            sub_return_fields.append(f"blocking_field_value: d2.{self.blocking_field}")
+        sub_parts.append(
+            "            RETURN {\n                "
+            + ",\n                ".join(sub_return_fields)
+            + "\n            }"
+        )
+        sub_parts.append("    )")
+        query_parts.extend(sub_parts)
+
+        # Outer return: flatten per-entity candidates with d1 metadata.
+        query_parts.append("    FOR c IN candidates")
+        return_fields = [
+            "doc1_key: d1._key",
+            "doc2_key: c.doc2_key",
+            "levenshtein_score: c.levenshtein_score",
+            "bm25_score: c.bm25_score",
+            "combined_score: c.combined_score",
+            "field_scores: c.field_scores",
+            f"search_fields: {list(self.search_fields.keys())}",
+            'method: "hybrid_blocking"',
+        ]
+        if self.blocking_field:
+            return_fields.append("blocking_field_value: c.blocking_field_value")
+
+        query_parts.append(
+            "        RETURN {\n            "
+            + ",\n            ".join(return_fields)
+            + "\n        }"
+        )
+
         return "\n".join(query_parts)
     
     def _calculate_avg_score(self, pairs: List[Dict[str, Any]], score_field: str) -> Optional[float]:

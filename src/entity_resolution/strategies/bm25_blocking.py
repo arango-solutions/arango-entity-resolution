@@ -185,16 +185,22 @@ class BM25BlockingStrategy(BlockingStrategy):
     def _build_bm25_query(self) -> str:
         """
         Build the AQL query for BM25-based blocking.
-        
+
+        The query uses a per-entity subquery so that ``LIMIT
+        @limit_per_entity`` applies *per source document* rather than
+        globally. Earlier versions placed ``LIMIT`` at the outer level of
+        a nested ``FOR``; in AQL that limits the flattened result stream
+        across all (d1, d2) iterations, so the strategy returned exactly
+        ``limit_per_entity`` pairs total regardless of collection size
+        rather than the intended top-K candidates per source entity.
+
         Returns:
             AQL query string
         """
-        # Start building query
+        # Outer loop: iterate source documents and apply d1-level filters.
         query_parts = [f"FOR d1 IN {self.collection}"]
-        
-        # Add filter conditions for d1
+
         if self.filters:
-            # Build filter for search field
             search_field_filters = self.filters.get(self.search_field, {})
             if search_field_filters:
                 if search_field_filters.get('not_null'):
@@ -202,56 +208,68 @@ class BM25BlockingStrategy(BlockingStrategy):
                 if 'min_length' in search_field_filters:
                     min_len = search_field_filters['min_length']
                     query_parts.append(f"    FILTER LENGTH(d1.{self.search_field}) > {min_len}")
-            
-            # Build filter for blocking field if specified
+
             if self.blocking_field and self.blocking_field in self.filters:
                 blocking_filters = self.filters[self.blocking_field]
                 if blocking_filters.get('not_null'):
                     query_parts.append(f"    FILTER d1.{self.blocking_field} != null")
-        
-        # Add SEARCH clause for d2
-        query_parts.append(f"    FOR d2 IN {self.search_view}")
-        
-        # Build SEARCH conditions
-        search_conditions = [
-            f"ANALYZER(",
-            f"    PHRASE(d2.{self.search_field}, d1.{self.search_field}, \"{self.analyzer}\"),",
-            f"    \"{self.analyzer}\"",
-            f")"
+
+        # Per-entity subquery: candidates for this specific d1. The
+        # `LIMIT @limit_per_entity` lives inside this subquery, so it
+        # caps results per source document. `SORT bm25_score DESC` makes
+        # the limit pick the highest-scoring matches.
+        sub_parts = [
+            f"    LET candidates = (",
+            f"        FOR d2 IN {self.search_view}",
+            f"            SEARCH ANALYZER(",
+            f"                PHRASE(d2.{self.search_field}, d1.{self.search_field}, \"{self.analyzer}\"),",
+            f"                \"{self.analyzer}\"",
+            f"            )",
+            f"            LET bm25_score = BM25(d2)",
+            f"            FILTER bm25_score > @bm25_threshold",
         ]
-        query_parts.append("    SEARCH " + "\n        ".join(search_conditions))
-        
-        # Calculate BM25 score
-        query_parts.append("    LET bm25_score = BM25(d2)")
-        
-        # Filter by BM25 threshold
-        query_parts.append("    FILTER bm25_score > @bm25_threshold")
-        
-        # Filter by blocking field if specified
         if self.blocking_field:
-            query_parts.append(f"    FILTER d2.{self.blocking_field} == d1.{self.blocking_field}")
-        
-        # Ensure we don't match a document with itself
-        query_parts.append("    FILTER d1._key < d2._key")
-        
-        # Limit per entity
-        query_parts.append("    LIMIT @limit_per_entity")
-        
-        # Build return object
-        return_fields = [
-            "doc1_key: d1._key",
+            sub_parts.append(
+                f"            FILTER d2.{self.blocking_field} == d1.{self.blocking_field}"
+            )
+        sub_parts.extend([
+            f"            FILTER d1._key < d2._key",
+            f"            SORT bm25_score DESC",
+            f"            LIMIT @limit_per_entity",
+        ])
+
+        sub_return_fields = [
             "doc2_key: d2._key",
             "bm25_score: bm25_score",
-            f'search_field: "{self.search_field}"',
-            'method: "bm25_blocking"'
         ]
-        
         if self.blocking_field:
-            return_fields.append(f"blocking_field_value: d1.{self.blocking_field}")
-        
-        return_clause = "    RETURN {\n        " + ",\n        ".join(return_fields) + "\n    }"
-        query_parts.append(return_clause)
-        
+            sub_return_fields.append(f"blocking_field_value: d2.{self.blocking_field}")
+        sub_parts.append(
+            "            RETURN {\n                "
+            + ",\n                ".join(sub_return_fields)
+            + "\n            }"
+        )
+        sub_parts.append("    )")
+        query_parts.extend(sub_parts)
+
+        # Outer return: flatten per-entity candidates with d1 metadata.
+        query_parts.append("    FOR c IN candidates")
+        return_fields = [
+            "doc1_key: d1._key",
+            "doc2_key: c.doc2_key",
+            "bm25_score: c.bm25_score",
+            f'search_field: "{self.search_field}"',
+            'method: "bm25_blocking"',
+        ]
+        if self.blocking_field:
+            return_fields.append("blocking_field_value: c.blocking_field_value")
+
+        query_parts.append(
+            "        RETURN {\n            "
+            + ",\n            ".join(return_fields)
+            + "\n        }"
+        )
+
         return "\n".join(query_parts)
     
     def _calculate_avg_bm25_score(self, pairs: List[Dict[str, Any]]) -> Optional[float]:
