@@ -359,12 +359,15 @@ class SimilarityEdgeService:
         """
         query_parts = ["FOR e IN @@edge_collection"]
         filters = []
+        bind_vars: Dict[str, Any] = {"@edge_collection": self.edge_collection_name}
         
         if method:
-            filters.append(f'FILTER e.method == "{method}"')
+            filters.append("FILTER e.method == @method")
+            bind_vars["method"] = method
         
         if older_than:
-            filters.append(f'FILTER e.timestamp < "{older_than}"')
+            filters.append("FILTER e.timestamp < @older_than")
+            bind_vars["older_than"] = older_than
         
         query_parts.extend(filters)
         query_parts.append("REMOVE e IN @@edge_collection")
@@ -374,7 +377,7 @@ class SimilarityEdgeService:
         
         cursor = self.db.aql.execute(
             query,
-            bind_vars={"@edge_collection": self.edge_collection_name},
+            bind_vars=bind_vars,
         )
         removed = list(cursor)
         

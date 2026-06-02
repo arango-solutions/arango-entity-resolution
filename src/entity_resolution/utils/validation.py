@@ -150,6 +150,82 @@ def validate_field_names(names: List[str], allow_nested: bool = True) -> List[st
     return validated
 
 
+# AQL keywords that must never appear in a config-supplied computed-field
+# expression. These enable data modification, sub-queries, or statement
+# break-out that could turn a "computed field" into an injection vector.
+_FORBIDDEN_EXPRESSION_KEYWORDS = (
+    "INSERT",
+    "UPDATE",
+    "UPSERT",
+    "REPLACE",
+    "REMOVE",
+    "LET",
+    "COLLECT",
+    "INTO",
+    "FOR",
+    "RETURN",
+    "WITH",
+)
+
+
+def validate_computed_field_expression(expression: str) -> str:
+    """
+    Validate a config-supplied AQL computed-field expression.
+
+    Computed-field expressions are interpolated directly into generated AQL
+    (``LET tmp = <expression>``), so an attacker who controls the pipeline
+    config could otherwise inject data-modification or sub-query statements.
+    This validator rejects expressions that contain data-modification
+    keywords, sub-queries, comment sequences, or statement break-out.
+
+    Safe expressions (``CONCAT(d.first, d.last)``, ``LOWER(d.name)``,
+    ``SUBSTRING(d.code, 0, 3)``) pass unchanged.
+
+    Args:
+        expression: The AQL expression to validate.
+
+    Returns:
+        The validated expression (stripped).
+
+    Raises:
+        ValueError: If the expression contains forbidden constructs.
+    """
+    if not isinstance(expression, str):
+        raise ValueError(
+            f"Computed-field expression must be a string, got {type(expression)}"
+        )
+
+    expr = expression.strip()
+    if not expr:
+        raise ValueError("Computed-field expression cannot be empty")
+
+    # Reject comment sequences which could be used to comment out the rest of
+    # the generated query.
+    if "//" in expr or "/*" in expr or "*/" in expr:
+        raise ValueError(
+            f"Invalid computed-field expression: '{sanitize_string_for_display(expr)}'. "
+            "Comment sequences are not allowed."
+        )
+
+    # Reject statement separators.
+    if ";" in expr:
+        raise ValueError(
+            f"Invalid computed-field expression: '{sanitize_string_for_display(expr)}'. "
+            "Statement separators (';') are not allowed."
+        )
+
+    upper = expr.upper()
+    for keyword in _FORBIDDEN_EXPRESSION_KEYWORDS:
+        if re.search(rf"\b{keyword}\b", upper):
+            raise ValueError(
+                f"Invalid computed-field expression: "
+                f"'{sanitize_string_for_display(expr)}'. "
+                f"The AQL keyword '{keyword}' is not allowed in computed fields."
+            )
+
+    return expr
+
+
 def validate_graph_name(name: str) -> str:
     """
     Validate graph name to prevent AQL injection.

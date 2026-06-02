@@ -128,8 +128,13 @@ def test_sample_records_executes_aql_when_collection_exists() -> None:
     dm = _make_manager(fake_db)
     rows = dm.sample_records("customers", limit=1)
     assert rows == [{"_key": "1"}]
-    assert "FOR doc IN customers" in fake_db.aql.calls[0]["query"]
-    assert "LIMIT 1" in fake_db.aql.calls[0]["query"]
+    call = fake_db.aql.calls[0]
+    # Collection and limit must be passed as bind variables, not interpolated
+    # into the query string (AQL injection prevention).
+    assert "FOR doc IN @@collection" in call["query"]
+    assert "LIMIT @limit" in call["query"]
+    assert call["bind_vars"].get("@collection") == "customers"
+    assert call["bind_vars"].get("limit") == 1
 
 
 def test_load_data_from_dataframe_returns_error_when_pandas_unavailable(monkeypatch) -> None:

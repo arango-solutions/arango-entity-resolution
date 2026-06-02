@@ -176,7 +176,12 @@ def test_clear_inferred_edges_returns_removed_count_and_builds_query() -> None:
 
     removed = svc.clear_inferred_edges(older_than="2020-01-01T00:00:00")
     assert removed == 2
-    last = db.aql.calls[-1]["query"]
+    last_call = db.aql.calls[-1]
+    last = last_call["query"]
     assert "FILTER e.inferred == true" in last
-    assert 'FILTER e.created_at < "2020-01-01T00:00:00"' in last
+    # older_than must be passed as a bind variable, not interpolated into the
+    # query string (AQL injection prevention).
+    assert "FILTER e.created_at < @older_than" in last
+    assert '"2020-01-01T00:00:00"' not in last
+    assert last_call["bind_vars"].get("older_than") == "2020-01-01T00:00:00"
 

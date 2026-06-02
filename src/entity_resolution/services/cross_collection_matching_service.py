@@ -371,9 +371,11 @@ class CrossCollectionMatchingService:
         """
         query_parts = ["FOR e IN @@edge_collection"]
         query_parts.append("    FILTER e.inferred == true")
+        bind_vars: Dict[str, Any] = {"@edge_collection": self.edge_collection_name}
         
         if older_than:
-            query_parts.append(f'    FILTER e.created_at < "{older_than}"')
+            query_parts.append("    FILTER e.created_at < @older_than")
+            bind_vars["older_than"] = older_than
         
         query_parts.append("    REMOVE e IN @@edge_collection")
         query_parts.append("    RETURN OLD")
@@ -382,7 +384,7 @@ class CrossCollectionMatchingService:
         
         cursor = self.db.aql.execute(
             query,
-            bind_vars={"@edge_collection": self.edge_collection_name},
+            bind_vars=bind_vars,
         )
         removed = list(cursor)
         

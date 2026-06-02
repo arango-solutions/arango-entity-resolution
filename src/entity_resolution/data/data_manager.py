@@ -18,6 +18,7 @@ from arango.collection import StandardCollection
 from ..utils.config import Config, get_config
 from ..utils.logging import get_logger
 from ..utils.database import DatabaseMixin
+from ..utils.validation import validate_collection_name
 
 
 class DataManager(DatabaseMixin):
@@ -241,20 +242,27 @@ class DataManager(DatabaseMixin):
             List of sample records
         """
         try:
-            if not self.db.has_collection(collection_name):
-                self.logger.warning(f"Collection '{collection_name}' does not exist")
+            # Validate the collection name (interpolated into AQL) and pass the
+            # limit as a bind variable to prevent AQL injection.
+            safe_collection = validate_collection_name(collection_name)
+
+            if not self.db.has_collection(safe_collection):
+                self.logger.warning(f"Collection '{safe_collection}' does not exist")
                 return []
             
-            collection = self.database.collection(collection_name)
+            collection = self.database.collection(safe_collection)
             
             # Get sample using AQL
-            aql = f"""
-            FOR doc IN {collection_name}
-                LIMIT {limit}
+            aql = """
+            FOR doc IN @@collection
+                LIMIT @limit
                 RETURN doc
             """
             
-            cursor = self.db.aql.execute(aql)
+            cursor = self.db.aql.execute(
+                aql,
+                bind_vars={"@collection": safe_collection, "limit": int(limit)},
+            )
             return list(cursor)
             
         except Exception as e:

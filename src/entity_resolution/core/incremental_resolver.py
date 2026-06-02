@@ -10,6 +10,11 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from entity_resolution.utils.validation import (
+    validate_collection_name,
+    validate_field_names,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -49,9 +54,13 @@ class IncrementalResolver:
         blocking_strategy: str = "prefix",
         prefix_length: int = 3,
     ) -> None:
+        # Validate identifiers up front: ``collection`` and ``fields`` are
+        # interpolated directly into AQL (the field names cannot be passed as
+        # bind variables), so they must be confirmed to be safe identifiers to
+        # prevent AQL injection.
         self.db = db
-        self.collection = collection
-        self.fields = fields
+        self.collection = validate_collection_name(collection)
+        self.fields = validate_field_names(fields or [])
         self.confidence_threshold = confidence_threshold
         self.blocking_strategy = blocking_strategy
         self.prefix_length = prefix_length

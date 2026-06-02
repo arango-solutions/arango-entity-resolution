@@ -30,6 +30,7 @@ class BlockingConfig:
         num_hash_tables: int = 10,
         num_hyperplanes: int = 8,
         random_seed: Optional[int] = 42,
+        allow_unsafe_expressions: bool = False,
     ):
         """
         Initialize blocking configuration.
@@ -53,6 +54,12 @@ class BlockingConfig:
             num_hash_tables: LSH number of hash tables.
             num_hyperplanes: LSH number of hyperplanes per table.
             random_seed: LSH seed for deterministic hashing.
+            allow_unsafe_expressions: When ``False`` (default), computed-field
+                AQL expressions are validated to reject data-modification
+                keywords, sub-queries, and comment/break-out sequences (these
+                expressions are interpolated directly into generated AQL).
+                Set ``True`` only for trusted configs that require advanced
+                AQL that the validator would otherwise reject.
         """
         self.strategy = strategy
         self.max_block_size = max_block_size
@@ -66,6 +73,7 @@ class BlockingConfig:
         self.num_hash_tables = num_hash_tables
         self.num_hyperplanes = num_hyperplanes
         self.random_seed = random_seed
+        self.allow_unsafe_expressions = allow_unsafe_expressions
     
     def parse_fields(self) -> tuple[list[str], dict[str, str]]:
         """
@@ -98,7 +106,16 @@ class BlockingConfig:
                 name = (item.get("name") or item.get("field") or "").strip()
                 expr = item.get("expression") or item.get("aql")
                 if name and isinstance(expr, str) and expr.strip():
-                    computed_fields[name] = expr.strip()
+                    if getattr(self, "allow_unsafe_expressions", False):
+                        computed_fields[name] = expr.strip()
+                    else:
+                        # Validate config-supplied AQL expressions before they
+                        # are interpolated into generated queries (AQL injection
+                        # prevention).
+                        from ..utils.validation import (
+                            validate_computed_field_expression,
+                        )
+                        computed_fields[name] = validate_computed_field_expression(expr)
             else:
                 continue
             if name:
@@ -130,6 +147,7 @@ class BlockingConfig:
             num_hash_tables=config_dict.get('num_hash_tables', 10),
             num_hyperplanes=config_dict.get('num_hyperplanes', 8),
             random_seed=config_dict.get('random_seed', 42),
+            allow_unsafe_expressions=config_dict.get('allow_unsafe_expressions', False),
         )
     
     def to_dict(self) -> Dict[str, Any]:

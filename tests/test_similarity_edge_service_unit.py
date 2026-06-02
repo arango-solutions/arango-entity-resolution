@@ -23,10 +23,12 @@ class FakeCursor(list):
 @dataclass
 class FakeAQL:
     last_query: Optional[str] = None
+    last_bind_vars: Dict[str, Any] = field(default_factory=dict)
     next_result: Iterable[Dict[str, Any]] = field(default_factory=list)
 
     def execute(self, query: str, *args: Any, **kwargs: Any) -> FakeCursor:
         self.last_query = query
+        self.last_bind_vars = dict(kwargs.get("bind_vars") or {})
         return FakeCursor(self.next_result)
 
 
@@ -319,7 +321,11 @@ def test_clear_edges_builds_query_with_method_filter_and_returns_removed_count()
     assert removed == 2
     assert db.aql.last_query is not None
     assert "FOR e IN @@edge_collection" in db.aql.last_query
-    assert 'FILTER e.method == "phone_blocking"' in db.aql.last_query
+    # method must be passed as a bind variable, not interpolated (AQL injection
+    # prevention).
+    assert "FILTER e.method == @method" in db.aql.last_query
+    assert '"phone_blocking"' not in db.aql.last_query
+    assert db.aql.last_bind_vars.get("method") == "phone_blocking"
     assert "REMOVE e IN @@edge_collection" in db.aql.last_query
 
 
@@ -332,7 +338,11 @@ def test_clear_edges_builds_query_with_older_than_filter() -> None:
 
     assert removed == 0
     assert db.aql.last_query is not None
-    assert 'FILTER e.timestamp < "2026-01-01T00:00:00"' in db.aql.last_query
+    # older_than must be passed as a bind variable, not interpolated (AQL
+    # injection prevention).
+    assert "FILTER e.timestamp < @older_than" in db.aql.last_query
+    assert '"2026-01-01T00:00:00"' not in db.aql.last_query
+    assert db.aql.last_bind_vars.get("older_than") == "2026-01-01T00:00:00"
 
 
 def test_init_auto_create_collection_false_does_not_create_collection() -> None:
