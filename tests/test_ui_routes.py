@@ -233,14 +233,37 @@ class TestReview:
             {"decision": "no_match", "score": 0.3},
         ]
         store_inst = MagicMock()
-        store_inst.query_verdicts.return_value = list(verdicts_list)
-        store_inst.all_verdicts.return_value = list(verdicts_list)
+        # query_verdicts returns a paginated dict (see FeedbackStore.query_verdicts).
+        store_inst.query_verdicts.return_value = {
+            "items": list(verdicts_list),
+            "total": len(verdicts_list),
+            "limit": 50,
+            "offset": 0,
+        }
         mock_fs_cls.return_value = store_inst
         resp = client.get("/api/review/customers")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 2
         assert len(data["verdicts"]) == 2
+
+    @patch("entity_resolution.reasoning.feedback.FeedbackStore")
+    @patch("entity_resolution.utils.validation.validate_collection_name")
+    def test_list_verdicts_forwards_correct_kwargs(self, mock_val, mock_fs_cls, client, mock_db):
+        """Regression: the route must use FeedbackStore.query_verdicts' real signature."""
+        mock_db.has_collection.return_value = True
+        store_inst = MagicMock()
+        store_inst.query_verdicts.return_value = {"items": [], "total": 0, "limit": 50, "offset": 0}
+        mock_fs_cls.return_value = store_inst
+        resp = client.get(
+            "/api/review/customers?status=match&min_score=0.5&max_score=0.9&source=llm"
+        )
+        assert resp.status_code == 200
+        kwargs = store_inst.query_verdicts.call_args.kwargs
+        assert kwargs["status"] == "match"
+        assert kwargs["score_min"] == 0.5
+        assert kwargs["score_max"] == 0.9
+        assert kwargs["source"] == "llm"
 
     @patch("entity_resolution.reasoning.feedback.FeedbackStore")
     @patch("entity_resolution.utils.validation.validate_collection_name")

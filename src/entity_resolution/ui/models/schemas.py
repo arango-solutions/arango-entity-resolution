@@ -88,7 +88,9 @@ class ConfigExportRequest(BaseModel):
 
 
 class ExportRequest(BaseModel):
-    output_dir: str
+    # Optional: when omitted the server writes to a temp dir so browser clients
+    # do not need to know server filesystem paths.
+    output_dir: Optional[str] = None
     filename_prefix: str = "cluster_export"
     limit: Optional[int] = None
     cluster_collection: Optional[str] = None

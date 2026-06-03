@@ -86,11 +86,19 @@ async def cluster_stats(request: Request, collection: str) -> Dict[str, Any]:
     cursor = db.aql.execute(
         """
         LET clusters = (FOR c IN @@coll RETURN c)
-        LET sizes = clusters[*].size
         LET qualities = (
             FOR c IN clusters
                 FILTER c.quality_score != null
                 RETURN c.quality_score
+        )
+        LET size_buckets = (
+            FOR c IN clusters
+                LET sz = LENGTH(c.members)
+                COLLECT bucket = (
+                    sz <= 5 ? TO_STRING(sz)
+                    : (sz <= 10 ? "6-10" : (sz <= 20 ? "11-20" : "21+"))
+                ) WITH COUNT INTO cnt
+                RETURN {bucket, cnt}
         )
         RETURN {
             total_clusters: LENGTH(clusters),
@@ -105,13 +113,16 @@ async def cluster_stats(request: Request, collection: str) -> Dict[str, Any]:
             ),
             avg_quality: AVERAGE(qualities),
             min_quality: MIN(qualities),
-            max_quality: MAX(qualities)
+            max_quality: MAX(qualities),
+            size_distribution: MERGE(
+                FOR b IN size_buckets RETURN {[b.bucket]: b.cnt}
+            )
         }
         """,
         bind_vars={"@coll": cluster_coll},
     )
     results = list(cursor)
-    return results[0] if results else {"total_clusters": 0}
+    return results[0] if results else {"total_clusters": 0, "size_distribution": {}}
 
 
 @router.get("/{collection}/{key}")

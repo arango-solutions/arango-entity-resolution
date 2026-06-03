@@ -369,9 +369,12 @@ class TestExportRequest:
         )
         assert obj.limit == 100
 
-    def test_missing_output_dir(self):
-        with pytest.raises(ValidationError):
-            ExportRequest()  # type: ignore[call-arg]
+    def test_output_dir_optional(self):
+        # output_dir is optional: the server falls back to a temp dir so browser
+        # clients do not need to supply server filesystem paths.
+        obj = ExportRequest()
+        assert obj.output_dir is None
+        assert obj.filename_prefix == "cluster_export"
 
 
 # ===================================================================

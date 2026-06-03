@@ -30,7 +30,7 @@ async def resolve_entity(
     db = _db(request)
     conn = _conn_from_db(db, request)
 
-    return run_resolve_entity(
+    matches = run_resolve_entity(
         **conn,
         collection=collection,
         record=body.record,
@@ -38,6 +38,17 @@ async def resolve_entity(
         confidence_threshold=body.confidence_threshold,
         top_k=body.top_k,
     )
+
+    # Enrich each match with a display ``key`` and the full ``record`` so the UI
+    # can show record content (the resolver itself returns only keys/scores).
+    coll = db.collection(collection) if db.has_collection(collection) else None
+    enriched: List[Dict[str, Any]] = []
+    for match in matches:
+        key = match.get("_key")
+        record = coll.get(key) if (coll is not None and key) else None
+        enriched.append({**match, "key": key, "record": record or {}})
+
+    return enriched
 
 
 @router.post("/cross")

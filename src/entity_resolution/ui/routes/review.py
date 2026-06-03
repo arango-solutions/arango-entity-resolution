@@ -26,6 +26,7 @@ async def list_verdicts(
     status: Optional[str] = None,
     min_score: Optional[float] = None,
     max_score: Optional[float] = None,
+    source: Optional[str] = None,
     sort_by: str = "score",
     sort_order: str = "asc",
     limit: int = 50,
@@ -44,27 +45,25 @@ async def list_verdicts(
 
     store = FeedbackStore(db, collection=fb_coll)
 
-    if hasattr(store, "query_verdicts"):
-        verdicts = store.query_verdicts(
-            decision=status,
-            min_score=min_score,
-            max_score=max_score,
-        )
-    else:
-        verdicts = store.all_verdicts()
-        if status:
-            verdicts = [v for v in verdicts if v.get("decision") == status]
-        if min_score is not None:
-            verdicts = [v for v in verdicts if (v.get("score") or 0) >= min_score]
-        if max_score is not None:
-            verdicts = [v for v in verdicts if (v.get("score") or 0) <= max_score]
+    # FeedbackStore.query_verdicts handles filtering, sorting, and pagination in
+    # AQL and returns {"items", "total", "limit", "offset"}.
+    result = store.query_verdicts(
+        status=status,
+        score_min=min_score,
+        score_max=max_score,
+        source=source,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        limit=limit,
+        offset=offset,
+    )
 
-    reverse = sort_order == "desc"
-    verdicts.sort(key=lambda v: v.get(sort_by, 0) or 0, reverse=reverse)
-
-    total = len(verdicts)
-    page = verdicts[offset : offset + limit]
-    return {"verdicts": page, "total": total, "offset": offset, "limit": limit}
+    return {
+        "verdicts": result.get("items", []),
+        "total": result.get("total", 0),
+        "offset": result.get("offset", offset),
+        "limit": result.get("limit", limit),
+    }
 
 
 @router.get("/{collection}/stats")
