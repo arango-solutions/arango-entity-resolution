@@ -74,6 +74,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 package-lock.json
+# The UI lockfile IS committed so CI `npm ci` and the contract gate are reproducible.
+!ui/package-lock.json
 yarn.lock
 
 # Data files

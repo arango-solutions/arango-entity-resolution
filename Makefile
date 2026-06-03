@@ -1,4 +1,4 @@
-.PHONY: help install install-dev install-all test test-unit test-integration lint format typecheck build clean docs docker-up docker-down docker-test
+.PHONY: help install install-dev install-all test test-unit test-integration lint format typecheck build clean docs docker-up docker-down docker-test ui-types
 
 .DEFAULT_GOAL := help
 
@@ -43,6 +43,10 @@ clean: ## Remove build artifacts, caches, .pyc files
 
 docs: ## Build documentation (add Sphinx/MkDocs to the project to enable)
 	@echo "No docs build configured."
+
+ui-types: ## Regenerate the UI OpenAPI schema and TypeScript types
+	python scripts/export_openapi.py
+	cd ui && npm run gen:types
 
 docker-up: ## Start ArangoDB via docker-compose
 	docker-compose -f docker-compose.yml up -d

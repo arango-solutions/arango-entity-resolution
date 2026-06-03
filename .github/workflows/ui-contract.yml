@@ -1,0 +1,62 @@
+name: UI Contract
+
+# Regenerates the OpenAPI schema and the frontend's TypeScript types, then
+# fails if the committed artifacts are stale. This prevents the frontend
+# (ui/src/api) and the FastAPI backend (src/entity_resolution/ui) from drifting
+# out of contract.
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+
+      - name: Install Python package (UI extra)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[ui]"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install UI dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Regenerate OpenAPI schema
+        run: python scripts/export_openapi.py
+
+      - name: Regenerate TypeScript types
+        working-directory: ui
+        run: npm run gen:types
+
+      - name: Fail if generated contract artifacts are stale
+        run: |
+          if ! git diff --exit-code -- ui/openapi.json ui/src/api/schema.ts; then
+            echo "::error::OpenAPI schema or generated TypeScript types are out of date."
+            echo "Run 'python scripts/export_openapi.py && (cd ui && npm run gen:types)' and commit the result."
+            exit 1
+          fi
+
+      - name: Typecheck UI
+        working-directory: ui
+        run: npm run typecheck

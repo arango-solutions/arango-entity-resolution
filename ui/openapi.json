@@ -1,0 +1,2126 @@
+{
+  "components": {
+    "schemas": {
+      "ClusterGraphResponse": {
+        "properties": {
+          "edges": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Nodes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "nodes",
+          "edges"
+        ],
+        "title": "ClusterGraphResponse",
+        "type": "object"
+      },
+      "ConfigBlockingRequest": {
+        "properties": {
+          "max_composite_size": {
+            "default": 3,
+            "title": "Max Composite Size",
+            "type": "integer"
+          },
+          "max_results": {
+            "default": 20,
+            "title": "Max Results",
+            "type": "integer"
+          },
+          "must_exclude_fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Must Exclude Fields"
+          },
+          "must_include_fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Must Include Fields"
+          },
+          "profile": {
+            "additionalProperties": true,
+            "title": "Profile",
+            "type": "object"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          }
+        },
+        "required": [
+          "profile"
+        ],
+        "title": "ConfigBlockingRequest",
+        "type": "object"
+      },
+      "ConfigExportRequest": {
+        "properties": {
+          "format": {
+            "default": "json",
+            "title": "Format",
+            "type": "string"
+          },
+          "include_rationale": {
+            "default": true,
+            "title": "Include Rationale",
+            "type": "boolean"
+          },
+          "recommendation": {
+            "additionalProperties": true,
+            "title": "Recommendation",
+            "type": "object"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          }
+        },
+        "required": [
+          "recommendation"
+        ],
+        "title": "ConfigExportRequest",
+        "type": "object"
+      },
+      "ConfigRecommendRequest": {
+        "properties": {
+          "allow_embedding_models": {
+            "default": true,
+            "title": "Allow Embedding Models",
+            "type": "boolean"
+          },
+          "allow_graph_clustering": {
+            "default": true,
+            "title": "Allow Graph Clustering",
+            "type": "boolean"
+          },
+          "objective_profile": {
+            "additionalProperties": true,
+            "title": "Objective Profile",
+            "type": "object"
+          },
+          "profile": {
+            "additionalProperties": true,
+            "title": "Profile",
+            "type": "object"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          }
+        },
+        "required": [
+          "profile",
+          "objective_profile"
+        ],
+        "title": "ConfigRecommendRequest",
+        "type": "object"
+      },
+      "ConfigSimulateRequest": {
+        "properties": {
+          "objective_profile": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objective Profile"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "variants": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "minItems": 2,
+            "title": "Variants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "variants"
+        ],
+        "title": "ConfigSimulateRequest",
+        "type": "object"
+      },
+      "ConfigValidateRequest": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          }
+        },
+        "required": [
+          "config"
+        ],
+        "title": "ConfigValidateRequest",
+        "type": "object"
+      },
+      "CrossResolveRequest": {
+        "properties": {
+          "options": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "source_collection": {
+            "title": "Source Collection",
+            "type": "string"
+          },
+          "source_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Fields",
+            "type": "array"
+          },
+          "target_collection": {
+            "title": "Target Collection",
+            "type": "string"
+          },
+          "target_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Target Fields",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_collection",
+          "target_collection",
+          "source_fields",
+          "target_fields"
+        ],
+        "title": "CrossResolveRequest",
+        "type": "object"
+      },
+      "ExportRequest": {
+        "properties": {
+          "cluster_collection": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Collection"
+          },
+          "edge_collection": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edge Collection"
+          },
+          "filename_prefix": {
+            "default": "cluster_export",
+            "title": "Filename Prefix",
+            "type": "string"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
+          "output_dir": {
+            "title": "Output Dir",
+            "type": "string"
+          }
+        },
+        "required": [
+          "output_dir"
+        ],
+        "title": "ExportRequest",
+        "type": "object"
+      },
+      "GoldenRecordPreviewRequest": {
+        "properties": {
+          "entity_keys": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Entity Keys",
+            "type": "array"
+          },
+          "strategy": {
+            "default": "most_complete",
+            "title": "Strategy",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_keys"
+        ],
+        "title": "GoldenRecordPreviewRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "PipelineRunRequest": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          }
+        },
+        "required": [
+          "config"
+        ],
+        "title": "PipelineRunRequest",
+        "type": "object"
+      },
+      "PipelineRunResponse": {
+        "properties": {
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "status"
+        ],
+        "title": "PipelineRunResponse",
+        "type": "object"
+      },
+      "ResolveRequest": {
+        "properties": {
+          "confidence_threshold": {
+            "default": 0.8,
+            "title": "Confidence Threshold",
+            "type": "number"
+          },
+          "fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "record": {
+            "additionalProperties": true,
+            "title": "Record",
+            "type": "object"
+          },
+          "top_k": {
+            "default": 10,
+            "title": "Top K",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "record",
+          "fields"
+        ],
+        "title": "ResolveRequest",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VerdictRequest": {
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "decision": {
+            "pattern": "^(match|no_match)$",
+            "title": "Decision",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "VerdictRequest",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Entity Resolution UI",
+    "version": "3.5.1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/clusters/{collection}": {
+      "get": {
+        "description": "Paginated cluster list with quality metadata.",
+        "operationId": "list_clusters_api_clusters__collection__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_size",
+            "required": false,
+            "schema": {
+              "default": 2,
+              "title": "Min Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Clusters Api Clusters  Collection  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Clusters",
+        "tags": [
+          "clusters"
+        ]
+      }
+    },
+    "/api/clusters/{collection}/stats": {
+      "get": {
+        "description": "Aggregate cluster statistics for a collection.",
+        "operationId": "cluster_stats_api_clusters__collection__stats_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Cluster Stats Api Clusters  Collection  Stats Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cluster Stats",
+        "tags": [
+          "clusters"
+        ]
+      }
+    },
+    "/api/clusters/{collection}/{key}": {
+      "get": {
+        "description": "Full cluster detail with member documents.",
+        "operationId": "cluster_detail_api_clusters__collection___key__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Cluster Detail Api Clusters  Collection   Key  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cluster Detail",
+        "tags": [
+          "clusters"
+        ]
+      }
+    },
+    "/api/clusters/{collection}/{key}/graph": {
+      "get": {
+        "description": "Return nodes and edges for cluster visualization.",
+        "operationId": "cluster_graph_api_clusters__collection___key__graph_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterGraphResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cluster Graph",
+        "tags": [
+          "clusters"
+        ]
+      }
+    },
+    "/api/collections": {
+      "get": {
+        "description": "List all non-system collections with name, type, and count.",
+        "operationId": "list_collections_api_collections_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Collections Api Collections Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Collections",
+        "tags": [
+          "collections"
+        ]
+      }
+    },
+    "/api/collections/{name}/profile": {
+      "get": {
+        "description": "Profile a collection's fields for ER-relevant statistics.",
+        "operationId": "profile_collection_api_collections__name__profile_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sample_limit",
+            "required": false,
+            "schema": {
+              "default": 10000,
+              "title": "Sample Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Profile Collection Api Collections  Name  Profile Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Profile Collection",
+        "tags": [
+          "collections"
+        ]
+      }
+    },
+    "/api/collections/{name}/sample": {
+      "get": {
+        "description": "Return schema and sample documents for a collection.",
+        "operationId": "collection_sample_api_collections__name__sample_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Collection Sample Api Collections  Name  Sample Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Collection Sample",
+        "tags": [
+          "collections"
+        ]
+      }
+    },
+    "/api/config/blocking": {
+      "post": {
+        "description": "Get blocking key recommendations from a profile.",
+        "operationId": "recommend_blocking_api_config_blocking_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigBlockingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Recommend Blocking Api Config Blocking Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recommend Blocking",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/config/export": {
+      "post": {
+        "description": "Export a config recommendation as YAML or JSON.",
+        "operationId": "export_config_api_config_export_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Export Config Api Config Export Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Config",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/config/recommend": {
+      "post": {
+        "description": "Get strategy recommendations from profile and objectives.",
+        "operationId": "recommend_strategy_api_config_recommend_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigRecommendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Recommend Strategy Api Config Recommend Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recommend Strategy",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/config/simulate": {
+      "post": {
+        "description": "Compare pipeline configurations by simulating variants.",
+        "operationId": "simulate_variants_api_config_simulate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigSimulateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Simulate Variants Api Config Simulate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Simulate Variants",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/config/validate": {
+      "post": {
+        "description": "Validate a pipeline configuration dict and return errors.",
+        "operationId": "validate_config_api_config_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigValidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Validate Config Api Config Validate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Config",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/export/{collection}": {
+      "post": {
+        "description": "Export clusters to JSON and CSV files.",
+        "operationId": "export_clusters_api_export__collection__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Export Clusters Api Export  Collection  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Clusters",
+        "tags": [
+          "export"
+        ]
+      }
+    },
+    "/api/export/{collection}/download/{filename}": {
+      "get": {
+        "description": "Serve an exported file for download.",
+        "operationId": "download_export_api_export__collection__download__filename__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Export",
+        "tags": [
+          "export"
+        ]
+      }
+    },
+    "/api/golden/{collection}/merge": {
+      "post": {
+        "description": "Execute a golden record merge and persist the result.",
+        "operationId": "merge_records_api_golden__collection__merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoldenRecordPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Merge Records Api Golden  Collection  Merge Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Merge Records",
+        "tags": [
+          "golden"
+        ]
+      }
+    },
+    "/api/golden/{collection}/preview": {
+      "post": {
+        "description": "Preview a golden record merge without persisting.",
+        "operationId": "preview_merge_api_golden__collection__preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoldenRecordPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Preview Merge Api Golden  Collection  Preview Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Merge",
+        "tags": [
+          "golden"
+        ]
+      }
+    },
+    "/api/golden/{collection}/{entity_key}": {
+      "get": {
+        "description": "Retrieve a golden record by key.",
+        "operationId": "get_golden_record_api_golden__collection___entity_key__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_key",
+            "required": true,
+            "schema": {
+              "title": "Entity Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Golden Record Api Golden  Collection   Entity Key  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Golden Record",
+        "tags": [
+          "golden"
+        ]
+      }
+    },
+    "/api/golden/{collection}/{entity_key}/provenance": {
+      "get": {
+        "description": "Return source records and provenance for a golden record.",
+        "operationId": "golden_provenance_api_golden__collection___entity_key__provenance_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_key",
+            "required": true,
+            "schema": {
+              "title": "Entity Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Golden Provenance Api Golden  Collection   Entity Key  Provenance Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Golden Provenance",
+        "tags": [
+          "golden"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Api Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/api/pipeline/history": {
+      "get": {
+        "description": "Query pipeline run history from _er_pipeline_runs collection.",
+        "operationId": "pipeline_history_api_pipeline_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Pipeline History Api Pipeline History Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pipeline History",
+        "tags": [
+          "pipeline"
+        ]
+      }
+    },
+    "/api/pipeline/run": {
+      "post": {
+        "description": "Start a pipeline run in the background. Returns a run_id.",
+        "operationId": "run_pipeline_api_pipeline_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PipelineRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Pipeline",
+        "tags": [
+          "pipeline"
+        ]
+      }
+    },
+    "/api/pipeline/status/{collection}": {
+      "get": {
+        "description": "Collection status: document count, edges, clusters.",
+        "operationId": "pipeline_status_api_pipeline_status__collection__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "edge_collection",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Edge Collection"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Pipeline Status Api Pipeline Status  Collection  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pipeline Status",
+        "tags": [
+          "pipeline"
+        ]
+      }
+    },
+    "/api/resolve/cross": {
+      "post": {
+        "description": "Cross-collection entity resolution.",
+        "operationId": "resolve_cross_collection_api_resolve_cross_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrossResolveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Resolve Cross Collection Api Resolve Cross Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resolve Cross Collection",
+        "tags": [
+          "resolve"
+        ]
+      }
+    },
+    "/api/resolve/{collection}": {
+      "post": {
+        "description": "Resolve a record against a collection.",
+        "operationId": "resolve_entity_api_resolve__collection__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Resolve Entity Api Resolve  Collection  Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resolve Entity",
+        "tags": [
+          "resolve"
+        ]
+      }
+    },
+    "/api/review/{collection}": {
+      "get": {
+        "description": "List verdicts from FeedbackStore, filterable by decision status and score range.",
+        "operationId": "list_verdicts_api_review__collection__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_score",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Score"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_score",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Score"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "default": "score",
+              "title": "Sort By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_order",
+            "required": false,
+            "schema": {
+              "default": "asc",
+              "title": "Sort Order",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Verdicts Api Review  Collection  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Verdicts",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/review/{collection}/optimize": {
+      "post": {
+        "description": "Trigger threshold optimization using stored feedback.",
+        "operationId": "optimize_thresholds_api_review__collection__optimize_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Optimize Thresholds Api Review  Collection  Optimize Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Optimize Thresholds",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/review/{collection}/pair/{key_a}/{key_b}": {
+      "get": {
+        "description": "Full pair comparison with field-level scoring and document data.",
+        "operationId": "pair_comparison_api_review__collection__pair__key_a___key_b__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key_a",
+            "required": true,
+            "schema": {
+              "title": "Key A",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key_b",
+            "required": true,
+            "schema": {
+              "title": "Key B",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Pair Comparison Api Review  Collection  Pair  Key A   Key B  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pair Comparison",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/review/{collection}/pair/{key_a}/{key_b}/verdict": {
+      "post": {
+        "description": "Record a human correction for a pair.",
+        "operationId": "submit_verdict_api_review__collection__pair__key_a___key_b__verdict_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key_a",
+            "required": true,
+            "schema": {
+              "title": "Key A",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key_b",
+            "required": true,
+            "schema": {
+              "title": "Key B",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerdictRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Submit Verdict Api Review  Collection  Pair  Key A   Key B  Verdict Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Verdict",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/review/{collection}/stats": {
+      "get": {
+        "description": "Verdict counts by decision type.",
+        "operationId": "verdict_stats_api_review__collection__stats_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Verdict Stats Api Review  Collection  Stats Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verdict Stats",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/review/{collection}/thresholds": {
+      "get": {
+        "description": "Return current low/high thresholds from the most recent optimization.",
+        "operationId": "current_thresholds_api_review__collection__thresholds_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Current Thresholds Api Review  Collection  Thresholds Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Current Thresholds",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/{full_path}": {
+      "get": {
+        "description": "Serve the SPA index for any non-API path.",
+        "operationId": "spa_fallback__full_path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "full_path",
+            "required": true,
+            "schema": {
+              "title": "Full Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Spa Fallback"
+      }
+    }
+  }
+}
