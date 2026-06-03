@@ -9,6 +9,13 @@ import os
 import sys
 from typing import Dict, Any
 
+# Prevent litellm from auto-loading a developer .env into os.environ at import
+# time. litellm calls load_dotenv() on import when LITELLM_MODE=DEV (its
+# default), which otherwise leaks local values (e.g. ARANGO_ENDPOINT) into
+# env-reading unit tests and causes order-dependent failures. Must be set
+# before any import that may transitively import litellm.
+os.environ.setdefault("LITELLM_MODE", "PRODUCTION")
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from entity_resolution.utils.config import Config, get_config
@@ -17,6 +24,22 @@ from entity_resolution.services.bulk_blocking_service import BulkBlockingService
 # Ensure unit tests don't fail due to missing environment variables
 os.environ.setdefault("USE_DEFAULT_PASSWORD", "true")
 os.environ.setdefault("ARANGO_ROOT_PASSWORD", "testpassword123")
+
+
+@pytest.fixture(autouse=True)
+def _restore_environ():
+    """Snapshot and restore os.environ around every test.
+
+    Prevents env mutations (including values a test may read from a developer's
+    local .env file, e.g. ARANGO_ENDPOINT) from leaking into later tests, which
+    previously caused order-dependent failures in env-reading unit tests.
+    """
+    saved = dict(os.environ)
+    try:
+        yield
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
 
 
 # Configure pytest

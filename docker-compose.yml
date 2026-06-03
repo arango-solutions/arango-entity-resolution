@@ -4,7 +4,9 @@ services:
     container_name: arango-entity-resolution
     restart: unless-stopped
     environment:
-      ARANGO_ROOT_PASSWORD: ${ARANGO_ROOT_PASSWORD:-testpassword123}
+      # No default password: ARANGO_ROOT_PASSWORD must be provided via the
+      # environment (e.g. `export ARANGO_ROOT_PASSWORD=...` or an .env file).
+      ARANGO_ROOT_PASSWORD: ${ARANGO_ROOT_PASSWORD:?ARANGO_ROOT_PASSWORD must be set in the environment}
       ARANGO_NO_AUTH: ${ARANGO_NO_AUTH:-false}
     ports:
       - "8529:8529"

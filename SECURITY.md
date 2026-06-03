@@ -38,14 +38,41 @@ cp config.example.json config.json
 
 ### Development/Testing Only
 
-For local development ONLY, you can enable the default test password:
+The library NEVER hardcodes a password fallback. A password must always be
+supplied via the environment (`ARANGO_PASSWORD` or `ARANGO_ROOT_PASSWORD`);
+if neither is set, configuration loading fails fast with an error.
+
+For local development you provide the password explicitly. The optional
+`USE_DEFAULT_PASSWORD=true` flag does NOT supply a password -- it only emits a
+warning to make local-development mode obvious:
 
 ```bash
-export USE_DEFAULT_PASSWORD=true  # Enables testpassword123 fallback
-export ARANGO_ROOT_PASSWORD=testpassword123  # Or set explicitly
+export ARANGO_ROOT_PASSWORD=your_local_dev_password   # required
+export USE_DEFAULT_PASSWORD=true                       # optional: warns that this is local-dev mode
 ```
 
-[WARNING] NEVER use this in production!
+[WARNING] NEVER use development passwords in production!
+
+### Web UI and MCP SSE authentication
+
+The optional Web UI (`arango-er ui`) and the MCP SSE transport
+(`arango-er-mcp --transport sse`) expose the database through a network
+service. Both bind to `127.0.0.1` by default and refuse to bind to a
+non-loopback host without a shared-secret token:
+
+```bash
+# UI
+export ER_UI_AUTH_TOKEN=$(openssl rand -hex 32)
+arango-er ui --serve-host 0.0.0.0            # requires the token above
+
+# MCP SSE
+export ER_MCP_AUTH_TOKEN=$(openssl rand -hex 32)
+arango-er-mcp --transport sse --host 0.0.0.0 # requires the token above
+```
+
+Clients must send `Authorization: Bearer <token>` (the UI also accepts
+`X-API-Key`, and WebSocket clients may pass `?token=<token>`). Binding to a
+public interface without a token requires an explicit `--insecure` override.
 
 ---
 
