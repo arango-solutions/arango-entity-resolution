@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from entity_resolution.utils.constants import __version__
+from .auth import extract_request_token, tokens_match
 
 from .routes import (
     collections,
@@ -34,6 +35,7 @@ def create_app(
     allowed_origins: Optional[List[str]] = None,
     connection_params: Optional[dict[str, Any]] = None,
     collection_aliases: Optional[dict[str, str]] = None,
+    auth_token: Optional[str] = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -51,12 +53,18 @@ def create_app(
         dict so UI routes can create secondary clients without introspecting
         the opaque ``db`` handle (python-arango v8 no longer exposes
         credentials as instance attributes).
-    collection_aliases:
+        collection_aliases:
         Optional mapping from the library's derived collection names to actual
         collection names in the database.  For example::
 
             {"duns_clusters": "entity_clusters",
              "duns_similarity_edges": "similarTo"}
+    auth_token:
+        Optional shared secret.  When set, every ``/api/*`` request (except
+        ``/api/health``) and every WebSocket connection must present the token
+        via ``Authorization: Bearer <token>`` / ``X-API-Key`` header (or a
+        ``token`` query parameter for WebSockets).  When ``None`` the API is
+        unauthenticated (intended for trusted localhost use only).
     """
     app = FastAPI(
         title="Entity Resolution UI",
@@ -69,6 +77,7 @@ def create_app(
     app.state.readonly = readonly
     app.state.connection_params = connection_params or {}
     app.state.collection_aliases = collection_aliases or {}
+    app.state.auth_token = auth_token or None
     app.state.pipeline_runs: dict[str, dict[str, Any]] = {}
 
     origins = allowed_origins or []
@@ -89,6 +98,24 @@ def create_app(
                 {"detail": "No database connection. Start ArangoDB and restart with connection options."},
                 status_code=503,
             )
+        return await call_next(request)
+
+    # Registered last so it runs first (outermost): authentication must be
+    # enforced before any other request handling.
+    @app.middleware("http")
+    async def require_auth(request: Request, call_next):
+        """Require a valid token for API routes when auth is enabled.
+
+        Health checks, CORS preflight, and non-API (SPA/static) routes are
+        exempt so the app remains usable behind the SPA fallback.
+        """
+        token = app.state.auth_token
+        if token and request.method != "OPTIONS":
+            path = request.url.path
+            if path.startswith("/api/") and path != "/api/health":
+                provided = extract_request_token(request.headers)
+                if not tokens_match(provided, token):
+                    return JSONResponse({"detail": "Unauthorized"}, status_code=401)
         return await call_next(request)
 
     @app.get("/api/health")

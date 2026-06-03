@@ -8,12 +8,22 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from entity_resolution.ui.auth import extract_request_token, tokens_match
+
 router = APIRouter(tags=["websocket"])
 
 
 @router.websocket("/ws/pipeline/{run_id}")
 async def pipeline_progress(websocket: WebSocket, run_id: str) -> None:
     """Stream pipeline progress events for a given run_id."""
+    token = getattr(websocket.app.state, "auth_token", None)
+    if token:
+        # Accept the token via header (Authorization/X-API-Key) or a `token`
+        # query parameter (browsers cannot set headers on WebSocket handshakes).
+        provided = extract_request_token(websocket.headers) or websocket.query_params.get("token")
+        if not tokens_match(provided, token):
+            await websocket.close(code=1008)  # policy violation
+            return
     await websocket.accept()
 
     db = websocket.app.state.db

@@ -11,6 +11,7 @@ Entry points:
 """
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -72,11 +73,64 @@ def _wrap_response_envelope(*, result: Any, warnings: List[str], enabled: bool) 
     return payload
 
 
-def run_sse_server(*, host: str, port: int) -> None:
-    """Run the FastMCP server using its supported SSE transport."""
+def _extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
+    """Return the token from an ``Authorization`` header value."""
+    if not authorization:
+        return None
+    parts = authorization.split(" ", 1)
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1].strip()
+    return authorization.strip()
+
+
+class _TokenAuthASGIMiddleware:
+    """Minimal ASGI middleware enforcing a bearer token on HTTP requests.
+
+    Wraps the FastMCP SSE app so both the event stream and the message
+    endpoint require ``Authorization: Bearer <token>``.
+    """
+
+    def __init__(self, app: Any, token: str) -> None:
+        self.app = app
+        self.token = token
+
+    async def __call__(self, scope: Dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") == "http":
+            headers = {
+                k.decode("latin-1").lower(): v.decode("latin-1")
+                for k, v in scope.get("headers", [])
+            }
+            provided = _extract_bearer_token(headers.get("authorization"))
+            if not provided or not hmac.compare_digest(provided, self.token):
+                await send({
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [(b"content-type", b"application/json")],
+                })
+                await send({
+                    "type": "http.response.body",
+                    "body": b'{"detail": "Unauthorized"}',
+                })
+                return
+        await self.app(scope, receive, send)
+
+
+def run_sse_server(*, host: str, port: int, auth_token: Optional[str] = None) -> None:
+    """Run the FastMCP server using its supported SSE transport.
+
+    When ``auth_token`` is provided, every HTTP request to the SSE app must
+    present ``Authorization: Bearer <token>``.
+    """
     mcp.settings.host = host
     mcp.settings.port = port
-    mcp.run(transport="sse")
+    if not auth_token:
+        mcp.run(transport="sse")
+        return
+
+    import uvicorn
+
+    app = _TokenAuthASGIMiddleware(mcp.sse_app(), auth_token)
+    uvicorn.run(app, host=host, port=port)
 
 def _conn() -> Dict[str, Any]:
     """Read connection settings from environment variables."""
@@ -606,6 +660,17 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8080, help="Port for SSE transport")
     parser.add_argument("--host", default="127.0.0.1", help="Host for SSE transport")
     parser.add_argument(
+        "--auth-token",
+        default=None,
+        help="Bearer token required for SSE transport. Falls back to the "
+        "ER_MCP_AUTH_TOKEN environment variable.",
+    )
+    parser.add_argument(
+        "--insecure",
+        action="store_true",
+        help="Allow binding SSE to a non-loopback host without a token (NOT recommended).",
+    )
+    parser.add_argument(
         "--demo",
         action="store_true",
         help=(
@@ -621,7 +686,23 @@ def main() -> None:
         return
 
     if args.transport == "sse":
-        run_sse_server(host=args.host, port=args.port)
+        auth_token = (args.auth_token or os.getenv("ER_MCP_AUTH_TOKEN") or "").strip() or None
+        loopback_hosts = {"127.0.0.1", "localhost", "::1", "::ffff:127.0.0.1"}
+        if args.host not in loopback_hosts and not auth_token:
+            if not args.insecure:
+                logger.error(
+                    "Refusing to bind MCP SSE to non-loopback host '%s' without "
+                    "authentication. Provide --auth-token / ER_MCP_AUTH_TOKEN, bind to "
+                    "127.0.0.1, or pass --insecure to override (NOT recommended).",
+                    args.host,
+                )
+                raise SystemExit(1)
+            logger.warning(
+                "MCP SSE is bound to non-loopback host '%s' with NO authentication. "
+                "Anyone who can reach this host has full database access.",
+                args.host,
+            )
+        run_sse_server(host=args.host, port=args.port, auth_token=auth_token)
     else:
         mcp.run(transport="stdio")
 

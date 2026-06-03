@@ -1342,8 +1342,45 @@ def embedding_benchmark(collection, fields, model, limit, batch_size, **conn_kwa
 @click.option("--open", "auto_open", is_flag=True, help="Open browser after startup.")
 @click.option("--dev", is_flag=True, help="Enable CORS for localhost:5173 (Vite dev server).")
 @click.option("--readonly", is_flag=True, help="Disable mutation endpoints.")
-def ui(database, host, port, username, password, serve_port, serve_host, auto_open, dev, readonly):
+@click.option(
+    "--auth-token",
+    default=None,
+    help="Shared secret required on all /api and /ws requests. "
+    "Falls back to the ER_UI_AUTH_TOKEN environment variable.",
+)
+@click.option(
+    "--insecure",
+    is_flag=True,
+    help="Allow binding to a non-loopback host without an auth token (NOT recommended).",
+)
+def ui(database, host, port, username, password, serve_port, serve_host, auto_open, dev, readonly, auth_token, insecure):
     """Launch the Entity Resolution web UI."""
+    import os as _os_auth
+    auth_token = (auth_token or _os_auth.getenv("ER_UI_AUTH_TOKEN") or "").strip() or None
+
+    loopback_hosts = {"127.0.0.1", "localhost", "::1", "::ffff:127.0.0.1"}
+    is_public_bind = serve_host not in loopback_hosts
+    if is_public_bind and not auth_token:
+        if not insecure:
+            click.echo(
+                click.style(
+                    f"Refusing to bind the UI to non-loopback host '{serve_host}' without "
+                    "authentication.\n\nProvide --auth-token / ER_UI_AUTH_TOKEN, bind to "
+                    "127.0.0.1, or pass --insecure to override (NOT recommended).",
+                    fg="red",
+                ),
+                err=True,
+            )
+            sys.exit(1)
+        click.echo(
+            click.style(
+                f"WARNING: UI is bound to non-loopback host '{serve_host}' with NO "
+                "authentication. Anyone who can reach this host has full database access.",
+                fg="yellow",
+                bold=True,
+            ),
+            err=True,
+        )
     try:
         from entity_resolution.ui.app import create_app
         import uvicorn
@@ -1390,6 +1427,7 @@ def ui(database, host, port, username, password, serve_port, serve_host, auto_op
         allowed_origins=allowed_origins,
         connection_params=conn_params,
         collection_aliases=collection_aliases,
+        auth_token=auth_token,
     )
 
     if auto_open:
