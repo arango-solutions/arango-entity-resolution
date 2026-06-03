@@ -6,119 +6,104 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { useClusterStats } from "../../hooks/useClusters";
 
 interface DistributionChartProps {
   collection: string;
 }
 
-const clusterSizeData = [
-  { range: "2", count: 320 },
-  { range: "3", count: 210 },
-  { range: "4", count: 145 },
-  { range: "5", count: 98 },
-  { range: "6-10", count: 72 },
-  { range: "11-20", count: 28 },
-  { range: "21+", count: 12 },
-];
+// Stable display order for the cluster-size buckets produced by the backend.
+const BUCKET_ORDER = ["2", "3", "4", "5", "6-10", "11-20", "21+"];
 
-const similarityScoreData = [
-  { range: "0.5-0.55", count: 45 },
-  { range: "0.55-0.6", count: 89 },
-  { range: "0.6-0.65", count: 156 },
-  { range: "0.65-0.7", count: 234 },
-  { range: "0.7-0.75", count: 312 },
-  { range: "0.75-0.8", count: 287 },
-  { range: "0.8-0.85", count: 198 },
-  { range: "0.85-0.9", count: 143 },
-  { range: "0.9-0.95", count: 89 },
-  { range: "0.95-1.0", count: 34 },
-];
+export function DistributionChart({ collection }: DistributionChartProps) {
+  const { data, isLoading } = useClusterStats(collection);
 
-export function DistributionChart({ collection: _collection }: DistributionChartProps) {
+  const distribution = data?.size_distribution ?? {};
+  const sizeData = BUCKET_ORDER.filter((b) => b in distribution).map((b) => ({
+    range: b,
+    count: distribution[b] ?? 0,
+  }));
+
+  const summary: Array<{ label: string; value: string }> = [
+    { label: "Total clusters", value: fmt(data?.total_clusters) },
+    { label: "Total members", value: fmt(data?.total_members) },
+    { label: "Avg size", value: fmt(data?.avg_size, 1) },
+    { label: "Max size", value: fmt(data?.max_size) },
+    { label: "Avg quality", value: fmt(data?.avg_quality, 2) },
+  ];
+
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <div className="rounded-lg border border-gray-200 bg-white p-5">
-        <h3 className="mb-1 text-sm font-medium text-gray-700">
+        <h3 className="mb-4 text-sm font-medium text-gray-700">
           Cluster Size Distribution
         </h3>
-        <p className="mb-4 text-xs text-gray-400">
-          Sample data — connect a real endpoint for live stats
-        </p>
         <div className="h-48">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={clusterSizeData}>
-              <XAxis
-                dataKey="range"
-                tick={{ fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-                width={40}
-              />
-              <Tooltip
-                contentStyle={{
-                  fontSize: 12,
-                  borderRadius: 8,
-                  border: "1px solid #e5e7eb",
-                }}
-              />
-              <Bar
-                dataKey="count"
-                fill="#6366f1"
-                radius={[4, 4, 0, 0]}
-                maxBarSize={32}
-              />
-            </BarChart>
-          </ResponsiveContainer>
+          {isLoading ? (
+            <div className="flex h-full items-center justify-center text-xs text-gray-400">
+              Loading…
+            </div>
+          ) : sizeData.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-xs text-gray-400">
+              No clusters yet — run a pipeline to populate this chart.
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={sizeData}>
+                <XAxis
+                  dataKey="range"
+                  tick={{ fontSize: 11 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 11 }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={40}
+                  allowDecimals={false}
+                />
+                <Tooltip
+                  contentStyle={{
+                    fontSize: 12,
+                    borderRadius: 8,
+                    border: "1px solid #e5e7eb",
+                  }}
+                />
+                <Bar
+                  dataKey="count"
+                  fill="#6366f1"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={32}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-5">
-        <h3 className="mb-1 text-sm font-medium text-gray-700">
-          Similarity Score Distribution
+        <h3 className="mb-4 text-sm font-medium text-gray-700">
+          Cluster Summary
         </h3>
-        <p className="mb-4 text-xs text-gray-400">
-          Sample data — connect a real endpoint for live stats
-        </p>
-        <div className="h-48">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={similarityScoreData}>
-              <XAxis
-                dataKey="range"
-                tick={{ fontSize: 10 }}
-                axisLine={false}
-                tickLine={false}
-                angle={-30}
-                textAnchor="end"
-                height={50}
-              />
-              <YAxis
-                tick={{ fontSize: 11 }}
-                axisLine={false}
-                tickLine={false}
-                width={40}
-              />
-              <Tooltip
-                contentStyle={{
-                  fontSize: 12,
-                  borderRadius: 8,
-                  border: "1px solid #e5e7eb",
-                }}
-              />
-              <Bar
-                dataKey="count"
-                fill="#10b981"
-                radius={[4, 4, 0, 0]}
-                maxBarSize={28}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <dl className="grid grid-cols-2 gap-4">
+          {summary.map((s) => (
+            <div key={s.label} className="rounded-md bg-gray-50 p-3">
+              <dt className="text-xs text-gray-500">{s.label}</dt>
+              <dd className="mt-1 text-lg font-semibold text-gray-900">
+                {s.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
       </div>
     </div>
   );
+}
+
+function fmt(value: number | undefined, decimals = 0): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  return decimals > 0
+    ? value.toFixed(decimals)
+    : Math.round(value).toLocaleString();
 }

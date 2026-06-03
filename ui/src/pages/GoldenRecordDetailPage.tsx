@@ -74,7 +74,10 @@ export function GoldenRecordDetailPage() {
     ? provenanceData
     : provenanceData?.source_records ?? [];
 
-  const provenance = goldenRecord.provenance ?? {};
+  const provenance = (goldenRecord.provenance ?? {}) as Record<
+    string,
+    { source: string; confidence: number }
+  >;
 
   const raw = goldenRecord as unknown as Record<string, unknown>;
   const { _key: _k, _id, _rev, _merged_keys, _strategy, provenance: _p, ...recordFields } =

@@ -750,7 +750,7 @@ export interface components {
             /** Limit */
             limit?: number | null;
             /** Output Dir */
-            output_dir: string;
+            output_dir?: string | null;
         };
         /** GoldenRecordPreviewRequest */
         GoldenRecordPreviewRequest: {
@@ -1645,6 +1645,7 @@ export interface operations {
                 status?: string | null;
                 min_score?: number | null;
                 max_score?: number | null;
+                source?: string | null;
                 sort_by?: string;
                 sort_order?: string;
                 limit?: number;

@@ -35,7 +35,7 @@ export function VerdictPanel({
       }
 
       mutation.mutate(
-        { collection, keyA, keyB, verdict: { verdict } },
+        { collection, keyA, keyB, verdict: { decision: verdict } },
         {
           onSuccess: () => {
             setSubmitted(verdict);

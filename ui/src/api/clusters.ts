@@ -53,10 +53,13 @@ export interface ClusterGraph {
 
 export interface ClusterStats {
   total_clusters: number;
-  total_members: number;
-  avg_cluster_size: number;
-  avg_quality_score: number;
-  size_distribution: Record<string, number>;
+  total_members?: number;
+  avg_size?: number;
+  max_size?: number;
+  avg_quality?: number;
+  min_quality?: number;
+  max_quality?: number;
+  size_distribution?: Record<string, number>;
 }
 
 export function getClusters(collection: string, params?: ClusterListParams) {

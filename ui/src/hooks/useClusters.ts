@@ -3,6 +3,7 @@ import {
   getClusters,
   getClusterDetail,
   getClusterGraph,
+  getClusterStats,
   type ClusterListParams,
 } from "../api/clusters";
 
@@ -36,5 +37,13 @@ export function useClusterGraph(
     queryKey: ["cluster-graph", collection, key],
     queryFn: () => getClusterGraph(collection!, key!),
     enabled: !!collection && !!key,
+  });
+}
+
+export function useClusterStats(collection: string | null) {
+  return useQuery({
+    queryKey: ["cluster-stats", collection],
+    queryFn: () => getClusterStats(collection!),
+    enabled: !!collection,
   });
 }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Download, FileDown, Loader2 } from "lucide-react";
 import { ExportOptions, type ExportOptionsValue } from "./ExportOptions";
-import { exportClusters, downloadExport } from "../../api/export";
+import { exportClusters, downloadExport, basename } from "../../api/export";
 import { useSelectedCollection } from "../../contexts/CollectionContext";
 import { EmptyState } from "../shared/EmptyState";
 
@@ -43,22 +43,30 @@ export function ExportCenter() {
     setError(null);
 
     try {
+      // The backend always writes both JSON and CSV artifacts; the format
+      // selector chooses which file to surface first in history.
       const result = await exportClusters(selectedCollection, {
-        format: options.format,
-        include_metadata: options.includeProvenance,
-        include_golden_records: options.includeGoldenRecords,
+        limit: options.limit,
       });
 
-      setHistory((prev) => [
-        {
-          filename: result.filename,
+      const exportedAt = new Date().toLocaleString();
+      const files: Array<[string, string]> = [
+        ["JSON", result.output_files.json],
+        ["CSV", result.output_files.csv],
+      ];
+      if (options.format === "csv") files.reverse();
+
+      const entries: ExportHistoryEntry[] = files
+        .filter(([, path]) => Boolean(path))
+        .map(([format, path]) => ({
+          filename: basename(path),
           collection: selectedCollection,
-          format: options.format.toUpperCase(),
-          recordCount: result.record_count,
-          exportedAt: new Date().toLocaleString(),
-        },
-        ...prev,
-      ]);
+          format,
+          recordCount: result.clusters_exported,
+          exportedAt,
+        }));
+
+      setHistory((prev) => [...entries, ...prev]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Export failed");
     } finally {

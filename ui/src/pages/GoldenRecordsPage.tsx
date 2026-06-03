@@ -47,16 +47,15 @@ export function GoldenRecordsPage() {
         strategy,
       );
 
-      const raw = result as unknown as Record<string, unknown>;
-      const goldenFields = result.fields ?? raw.golden_record ?? {};
-      const provenance = result.provenance ?? {};
-      const conflicts = result.conflicts ?? [];
+      // The merge preview returns the fused golden record. Field-level
+      // provenance/conflicts are not produced by the preview endpoint, so they
+      // render empty until a richer survivorship API exists.
+      const goldenFields = (result.golden_record ?? {}) as Record<string, unknown>;
 
       setPreview({
-        fields: goldenFields as Record<string, unknown>,
-        provenance:
-          provenance as Record<string, { source: string; confidence: number }>,
-        conflicts: conflicts as string[],
+        fields: goldenFields,
+        provenance: {},
+        conflicts: [],
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Preview failed");

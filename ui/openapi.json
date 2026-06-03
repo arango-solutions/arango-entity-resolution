@@ -308,13 +308,17 @@
             "title": "Limit"
           },
           "output_dir": {
-            "title": "Output Dir",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Dir"
           }
         },
-        "required": [
-          "output_dir"
-        ],
         "title": "ExportRequest",
         "type": "object"
       },
@@ -1740,6 +1744,22 @@
                 }
               ],
               "title": "Max Score"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
             }
           },
           {

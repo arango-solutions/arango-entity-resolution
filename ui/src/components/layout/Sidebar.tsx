@@ -38,7 +38,9 @@ export function Sidebar() {
   const { data: collections } = useCollections();
   const { data: reviewStats } = useReviewStats(selectedCollection);
 
-  const pendingCount = reviewStats?.pending ?? 0;
+  // The feedback store tracks decided verdicts, not a pending queue, so the
+  // badge reflects the total number of recorded verdicts for the collection.
+  const pendingCount = reviewStats?.total ?? 0;
 
   return (
     <aside className="flex h-screen w-60 flex-col border-r border-gray-200 bg-gray-50">

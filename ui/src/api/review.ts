@@ -1,5 +1,15 @@
 import { fetchApi } from "./client";
 
+export interface ReviewVerdict {
+  key_a: string;
+  key_b: string;
+  score: number;
+  decision?: string;
+  confidence?: number;
+  source?: string;
+}
+
+/** Display shape for a pair in the review queue (derived from a verdict). */
 export interface ReviewPairSummary {
   key_a: string;
   key_b: string;
@@ -13,23 +23,30 @@ export interface ReviewFilters {
   status?: string;
   min_score?: number;
   max_score?: number;
-  page?: number;
-  page_size?: number;
+  source?: string;
+  sort_by?: string;
+  sort_order?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export interface ReviewQueueResponse {
-  pairs: ReviewPairSummary[];
+  verdicts: ReviewVerdict[];
   total: number;
-  page: number;
-  page_size: number;
+  offset: number;
+  limit: number;
+}
+
+export interface ReviewDecisionCount {
+  decision: string;
+  count: number;
+  avg_score?: number;
+  avg_confidence?: number;
 }
 
 export interface ReviewStats {
-  pending: number;
-  resolved: number;
+  by_decision: ReviewDecisionCount[];
   total: number;
-  match_count: number;
-  no_match_count: number;
 }
 
 export interface ReviewPairDetail {
@@ -45,13 +62,16 @@ export interface ReviewPairDetail {
 }
 
 export interface VerdictRequest {
-  verdict: "match" | "no_match" | "skip";
+  decision: "match" | "no_match";
+  confidence?: number;
   notes?: string;
 }
 
 export interface ThresholdInfo {
-  low: number;
-  high: number;
+  low_threshold: number;
+  high_threshold: number;
+  source?: string;
+  sample_count?: number;
 }
 
 export function getReviewQueue(collection: string, filters?: ReviewFilters) {

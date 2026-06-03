@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Play, Square, AlertCircle } from "lucide-react";
 import { useSelectedCollection } from "../../contexts/CollectionContext";
 import { useRunPipeline } from "../../hooks/usePipeline";
@@ -46,9 +46,11 @@ export function PipelineRunner() {
   }
 
   const pipelineDone = isComplete || !!error;
-  if (pipelineDone && isRunning) {
-    setIsRunning(false);
-  }
+  useEffect(() => {
+    if (pipelineDone && isRunning) {
+      setIsRunning(false);
+    }
+  }, [pipelineDone, isRunning]);
 
   return (
     <div className="space-y-6">

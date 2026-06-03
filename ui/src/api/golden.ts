@@ -1,25 +1,21 @@
 import { fetchApi } from "./client";
 
 export interface GoldenRecordPreview {
-  fields: Record<string, unknown>;
-  provenance: Record<string, { source: string; confidence: number }>;
-  conflicts: string[];
+  golden_record: Record<string, unknown>;
+  merged_keys: string[];
+  canonical_key: string;
+  strategy_used: string;
 }
 
-export interface GoldenRecord {
-  _key: string;
-  collection: string;
-  fields: Record<string, unknown>;
-  provenance: Record<string, { source: string; confidence: number }>;
-  created_at: string;
+export interface GoldenMergeResult extends GoldenRecordPreview {
+  persisted?: boolean;
+  golden_collection?: string;
 }
 
-export interface ProvenanceRecord {
-  source: string;
-  record_key: string;
-  ingested_at: string;
-  confidence: number;
-  fields: Record<string, unknown>;
+export interface GoldenProvenance {
+  golden_record: Record<string, unknown>;
+  source_records: Record<string, unknown>[];
+  merged_keys: string[];
 }
 
 export function previewGoldenRecord(
@@ -31,7 +27,7 @@ export function previewGoldenRecord(
     `/api/golden/${collection}/preview`,
     {
       method: "POST",
-      body: JSON.stringify({ keys, strategy }),
+      body: JSON.stringify({ entity_keys: keys, strategy }),
     },
   );
 }
@@ -41,18 +37,18 @@ export function mergeGoldenRecord(
   keys: string[],
   strategy?: string,
 ) {
-  return fetchApi<GoldenRecord>(`/api/golden/${collection}/merge`, {
+  return fetchApi<GoldenMergeResult>(`/api/golden/${collection}/merge`, {
     method: "POST",
-    body: JSON.stringify({ keys, strategy }),
+    body: JSON.stringify({ entity_keys: keys, strategy }),
   });
 }
 
 export function getGoldenRecord(collection: string, key: string) {
-  return fetchApi<GoldenRecord>(`/api/golden/${collection}/${key}`);
+  return fetchApi<Record<string, unknown>>(`/api/golden/${collection}/${key}`);
 }
 
 export function getProvenance(collection: string, key: string) {
-  return fetchApi<ProvenanceRecord[]>(
+  return fetchApi<GoldenProvenance>(
     `/api/golden/${collection}/${key}/provenance`,
   );
 }

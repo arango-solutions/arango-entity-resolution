@@ -73,10 +73,10 @@ export function EntityResolver() {
         record,
         Object.keys(record),
       );
-      const resolved = result.matches ?? (result as unknown as ResolveMatch[]);
-      const sorted = Array.isArray(resolved)
-        ? [...resolved].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-        : [];
+      const resolved: ResolveMatch[] = Array.isArray(result) ? result : [];
+      const sorted = [...resolved].sort(
+        (a, b) => (b.score ?? 0) - (a.score ?? 0),
+      );
       setMatches(sorted);
       setHasResolved(true);
     } catch (err) {
@@ -182,9 +182,9 @@ export function EntityResolver() {
             <div className="space-y-3">
               {matches.map((m, idx) => (
                 <MatchResult
-                  key={m.key ?? idx}
+                  key={m.key ?? m._key ?? idx}
                   rank={idx + 1}
-                  matchKey={m.key ?? `match-${idx}`}
+                  matchKey={m.key ?? m._key ?? `match-${idx}`}
                   score={m.score ?? 0}
                   record={m.record ?? {}}
                 />
