@@ -55,7 +55,7 @@ arango-er-mcp
 arango-er-mcp --transport sse --port 8080
 ```
 
-Exposes 14 tools and 2 resources for any MCP-compatible AI agent. See [MCP Tools](#mcp-tools) below for the full inventory.
+Exposes 15 tools and 2 resources for any MCP-compatible AI agent. See [MCP Tools](#mcp-tools) below for the full inventory.
 
 ## How It Works
 
@@ -179,7 +179,7 @@ The LLM receives both records, the overall similarity score, and field-level sco
 
 ### MCP Tools
 
-The MCP server exposes 14 tools organized into two groups — core ER operations and an advisory layer that helps an AI agent decide *how* to resolve before running the pipeline.
+The MCP server exposes 15 tools organized into two groups — core ER operations and an advisory layer that helps an AI agent decide *how* to resolve before running the pipeline.
 
 #### Core ER Tools
 
@@ -315,7 +315,7 @@ src/entity_resolution/
 ├── services/       Blocking, similarity, clustering, embedding, export services
 │   └── clustering_backends/   Union-Find, DFS, Sparse, AQL, GAE
 ├── strategies/     Exact, BM25, vector, geographic, LSH, shard-parallel blocking
-├── mcp/            MCP server (7 tools, 2 resources)
+├── mcp/            MCP server (15 tools, 2 resources)
 ├── reasoning/      LLM verifier, GraphRAG, feedback/active learning
 ├── enrichments/    Type constraints, context resolver, acronym handler, provenance sweeper
 ├── etl/            Canonical resolver, normalizers, arangoimport integration

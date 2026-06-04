@@ -517,7 +517,7 @@ This proposal **extends** the existing system rather than replacing it:
 | `LLMMatchVerifier` / `AdaptiveLLMVerifier` | Curation of ambiguous matches |
 | `AddressERPipeline` | Address normalization and resolution |
 | `EmbeddingService` | Vector similarity for semantic blocking |
-| MCP Server (14 tools) | AI agent interface for data stewardship |
+| MCP Server (15 tools) | AI agent interface for data stewardship |
 | Advisor Tools | Strategy recommendation for new source onboarding |
 | Clustering Backends (including GAE) | Large-scale entity grouping during backfill |
 | Golden Record Service | Survivorship-driven record fusion |

@@ -76,7 +76,7 @@ Provide a practical, ArangoDB-native entity-resolution toolkit that supports:
 - `arango-er` CLI:
   - `run`, `status`, `clusters`, `export`, `benchmark`
   - `runtime-health`, `runtime-health-export`, `runtime-health-baseline`, `runtime-health-compare`, `runtime-health-gate`
-- `arango-er-mcp` MCP server: 14 tools, 2 resources
+- `arango-er-mcp` MCP server: 15 tools, 2 resources
 - `arango-er-demo`
 
 ### Reporting and Evaluation

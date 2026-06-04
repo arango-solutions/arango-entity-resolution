@@ -32,7 +32,7 @@ The library currently exposes three interfaces: Python API, CLI (`arango-er`), a
 
 ### Why Now
 
-The library already has the backend capabilities to support every screen described in this document. The MCP server's 14 tools and 2 resources, the services layer, and the `FeedbackStore`/`AdaptiveLLMVerifier` together form a complete API surface. The UI is a matter of wiring a presentation layer to existing code, not building new resolution logic.
+The library already has the backend capabilities to support every screen described in this document. The MCP server's 15 tools and 2 resources, the services layer, and the `FeedbackStore`/`AdaptiveLLMVerifier` together form a complete API surface. The UI is a matter of wiring a presentation layer to existing code, not building new resolution logic.
 
 The centralized ER service roadmap (v4.x) will eventually require an admin UI for tenant management, schema registry, and subscription monitoring. Starting with a focused library UI now establishes the frontend infrastructure, component patterns, and API conventions that the centralized service UI will extend.
 
@@ -67,10 +67,10 @@ The centralized ER service roadmap (v4.x) will eventually require an admin UI fo
 |-------|-----------|-----------|
 | **Backend** | FastAPI | Already referenced in DESIGN.md as the orchestration HTTP layer. Async, OpenAPI docs, Pydantic models — natural fit for a Python library. |
 | **Frontend** | React 19 + TypeScript | Component-based, large ecosystem, easy to find contributors. TypeScript catches contract drift between frontend and backend early. |
-| **UI Components** | shadcn/ui + Tailwind CSS | Copy-paste components (not a dependency), tree-shakeable, accessible, modern aesthetic. No heavy framework lock-in. |
-| **State Management** | TanStack Query (React Query) | Server-state caching, background refetch, optimistic updates. Eliminates manual loading/error/cache logic. |
+| **UI Components** | Tailwind CSS v4 (utility-first) | No component-library dependency; a small set of hand-rolled shared primitives (`Badge`, `StatCard`, `EmptyState`, etc.). `clsx` + `tailwind-merge` for class composition. |
+| **State Management** | TanStack Query (React Query) | Server-state caching, background refetch, and request deduplication. Eliminates manual loading/error/cache logic. (Optimistic updates are a planned enhancement, not yet implemented.) |
 | **Charts** | Recharts | React-native charting on top of D3. Lightweight, composable. |
-| **Graph Visualization** | React Flow or Cytoscape.js | Interactive node-edge diagrams for cluster graphs. React Flow for simpler cases; Cytoscape for dense graphs. |
+| **Graph Visualization** | React Flow (`@xyflow/react` v12) | Interactive node-edge diagrams for cluster graphs. |
 | **Bundling** | Vite | Fast builds, HMR, trivial to bundle static output into a Python package. |
 
 ### Package Structure
