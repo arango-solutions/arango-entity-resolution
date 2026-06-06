@@ -132,6 +132,7 @@ The product must support optional GAE clustering for enterprise-scale graphs, wi
 - **Explainability**: Surface quality signals, backend selection rationale, and structured benchmark outputs
 - **Extensibility**: Preserve room for future GraphRAG, geospatial, and graph-learning additions
 - **Performance Portability**: Support cross-platform GPU acceleration for embedding-heavy workloads on Apple Silicon and Linux with deterministic CPU fallback behavior
+- **Platform Baseline**: ArangoDB **3.12+** is the supported baseline. Vector / ANN blocking **requires** the native 3.12 vector index (`APPROX_NEAR_COSINE`); brute-force vector search is intentionally not supported, so vector features are unavailable on ArangoDB 3.11 and earlier. Non-vector capabilities (exact/BM25/LSH/graph blocking, similarity, clustering, golden records) do not require 3.12.
 
 ---
 

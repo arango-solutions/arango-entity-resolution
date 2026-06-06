@@ -96,17 +96,16 @@ The `similarity_threshold` parameter controls how similar records must be to bec
 
 ### Finding the Right Threshold
 
-Use the `get_similarity_distribution()` method to analyze your data:
+Start at `0.8` and adjust based on review of the resulting candidate pairs:
+raise it if you see too many false positives, lower it if true duplicates are
+being missed. The `merge_entities` / review tooling helps inspect borderline
+pairs while tuning.
 
-```python
-stats = strategy.get_similarity_distribution(sample_size=1000)
-
-print(f"Mean similarity: {stats['mean_similarity']:.3f}")
-print(f"Recommended thresholds:")
-print(f"  Conservative (top 10%): {stats['recommended_thresholds']['conservative']:.3f}")
-print(f"  Balanced (top 25%): {stats['recommended_thresholds']['balanced']:.3f}")
-print(f"  Aggressive (top 50%): {stats['recommended_thresholds']['aggressive']:.3f}")
-```
+> **Note:** Vector blocking requires ArangoDB 3.12+ with a native vector index
+> (`APPROX_NEAR_COSINE`). Create it with
+> `VectorBlockingStrategy(..., create_vector_index=True)` or
+> `strategy.ensure_vector_index()`. There is no brute-force fallback on older
+> versions.
 
 ## Configuration Options
 

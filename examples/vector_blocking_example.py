@@ -207,13 +207,15 @@ def run_vector_blocking(db, collection_name: str):
     """Run vector-based blocking"""
     print_section("Step 3: Vector-Based Blocking (Tier 3)")
     
-    # Create vector blocking strategy
-    print("Initializing VectorBlockingStrategy...")
+    # Create vector blocking strategy. Requires ArangoDB 3.12+; create the
+    # native vector index now that embeddings exist (no brute-force fallback).
+    print("Initializing VectorBlockingStrategy (native vector index)...")
     strategy = VectorBlockingStrategy(
         db=db,
         collection=collection_name,
         similarity_threshold=0.7,  # 70% similarity minimum
-        limit_per_entity=20
+        limit_per_entity=20,
+        create_vector_index=True,
     )
     
     # Generate candidates
@@ -358,42 +360,6 @@ def compare_blocking_methods(vector_pairs, exact_pairs, fuzzy_pairs):
     }
 
 
-def analyze_similarity_distribution(db, collection_name: str):
-    """Analyze the distribution of similarity scores"""
-    print_section("Step 7: Similarity Score Distribution Analysis")
-    
-    strategy = VectorBlockingStrategy(
-        db=db,
-        collection=collection_name
-    )
-    
-    print("Analyzing similarity score distribution (sampling 100 pairs)...")
-    stats = strategy.get_similarity_distribution(sample_size=100)
-    
-    if 'error' not in stats:
-        print(f"\nSimilarity Statistics:")
-        print(f"  Sample size: {stats['sample_size']}")
-        print(f"  Min similarity: {stats['min_similarity']:.3f}")
-        print(f"  Max similarity: {stats['max_similarity']:.3f}")
-        print(f"  Mean similarity: {stats['mean_similarity']:.3f}")
-        print(f"  Median similarity: {stats['median_similarity']:.3f}")
-        print(f"  Std deviation: {stats['std_similarity']:.3f}")
-        
-        print(f"\nRecommended Thresholds:")
-        print(f"  Conservative (top 10%): {stats['recommended_thresholds']['conservative']:.3f}")
-        print(f"  Balanced (top 25%): {stats['recommended_thresholds']['balanced']:.3f}")
-        print(f"  Aggressive (top 50%): {stats['recommended_thresholds']['aggressive']:.3f}")
-        
-        print(f"\nDistribution by similarity bucket:")
-        for bucket_info in sorted(stats['distribution'], key=lambda x: x['bucket'], reverse=True):
-            bucket = bucket_info['bucket']
-            count = bucket_info['count']
-            bar = '#' * min(count, 50)
-            print(f"  {bucket:.1f}-{bucket+0.1:.1f}: {bar} ({count})")
-    else:
-        print(f"Could not analyze distribution: {stats['error']}")
-
-
 def demonstrate_geographic_blocking(db, collection_name: str):
     """Demonstrate vector blocking with geographic constraints"""
     print_section("Step 8: Geographic Blocking (Optional Constraint)")
@@ -420,7 +386,8 @@ def demonstrate_geographic_blocking(db, collection_name: str):
         db=db,
         collection=collection_name,
         similarity_threshold=0.6,
-        blocking_field='state'  # Only compare within same state
+        blocking_field='state',  # Only compare within same state
+        create_vector_index=True,
     )
     
     pairs = strategy.generate_candidates()
@@ -455,7 +422,6 @@ def main():
         fuzzy_pairs = run_fuzzy_blocking(db, COLLECTION_NAME)
         
         compare_blocking_methods(vector_pairs, exact_pairs, fuzzy_pairs)
-        analyze_similarity_distribution(db, COLLECTION_NAME)
         demonstrate_geographic_blocking(db, COLLECTION_NAME)
         
         # Summary
@@ -470,7 +436,6 @@ def main():
         
         print(f"\nNext Steps:")
         print(f"  - Adjust similarity_threshold based on your data")
-        print(f"  - Use get_similarity_distribution() to tune parameters")
         print(f"  - Combine with exact and fuzzy blocking for best results")
         print(f"  - See config/vector_search_setup.md for configuration details")
         

@@ -168,6 +168,28 @@ Sequencing: 5A/5B immediately (pure doc fixes), 5C after Workstream 1 lands. PRs
 
 ---
 
+## Workstream 7 - Native vector index (PR12, added after external critique)
+
+The vector blocking path used brute-force cosine (an O(n^2) AQL self-join and a
+full-scan COSINE_SIMILARITY), never the ArangoDB 3.12 native vector index, and
+the README overclaimed "ANN search". PR12 addresses this:
+
+- ANNAdapter now detects a real `vector` index on the embedding field and uses
+  `APPROX_NEAR_COSINE` (per-source top-k) for both single-query and all-pairs
+  search; brute force remains the genuine fallback (older versions / no index /
+  forced for benchmarking).
+- `ANNAdapter.ensure_vector_index()` creates the index (auto-detected dimension,
+  heuristic nLists clamped to doc count).
+- `VectorBlockingStrategy` gains `create_vector_index` / `vector_index_n_lists`.
+- `scripts/benchmark_vector_blocking.py` compares brute vs ANN (time + recall).
+- README vector/ANN claims corrected to match reality.
+- Unit tests cover backend selection, index creation, and APPROX_NEAR_COSINE
+  query construction (integration against a real 3.12 vector index still
+  required before release).
+- Upstream contribution candidate.
+
+---
+
 ## Workstream 6 - PyPI release (final)
 
 Build and publish a new release once Workstreams 1-5 land and CI is green.
@@ -211,5 +233,6 @@ Build and publish a new release once Workstreams 1-5 land and CI is green.
 | 9 | W2C UI hardening | 2-3 days |
 | 10 | W5 docs/PRD reconciliation | 0.5-1 day |
 | 11 | W6 PyPI release 3.6.0 | 0.5 day |
+| 12 | W7 native vector index / APPROX_NEAR_COSINE | 1-2 days |
 
 Doc quick-fixes (W5A/5B) can land immediately, independent of code.

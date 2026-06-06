@@ -1,154 +1,288 @@
 """
 ANN (Approximate Nearest Neighbor) Adapter Layer
 
-Provides a unified interface for vector similarity search with automatic fallback:
-- Primary: ArangoDB native vector search (HNSW/Arango ANN) if available
-- Fallback: Brute-force cosine similarity computation
+Vector similarity search backed exclusively by the ArangoDB 3.12+ **native
+vector index** (``APPROX_NEAR_COSINE``). There is intentionally **no
+brute-force fallback** in this code path: if the deployment is older than 3.12
+or no ``vector`` index exists on the embedding field, vector search raises
+:class:`VectorSearchUnavailableError` directing the operator to upgrade.
 
-This adapter enables VectorBlockingStrategy to leverage optimized vector search
-when available while maintaining backward compatibility.
+Brute-force cosine is only used as an internal ground-truth baseline inside
+``scripts/benchmark_vector_blocking.py`` for recall measurement -- it is not a
+supported production path and is not reachable through the public API.
 """
 
 import logging
+import math
 import re
 from typing import List, Dict, Any, Optional, Tuple
 from arango.database import StandardDatabase
-import numpy as np
 
 from ..utils.validation import validate_collection_name, validate_field_name
 
 
-# Constants
-MINIMUM_VECTOR_MAGNITUDE = 1e-10  # Prevent division by zero
-ARANGODB_MIN_VERSION_FOR_VECTOR_SEARCH = "3.10.0"  # Vector search available in 3.10+
+# Native vector index + APPROX_NEAR_COSINE require ArangoDB 3.12+.
+ARANGODB_MIN_VERSION_FOR_VECTOR_INDEX = (3, 12)
+DEFAULT_VECTOR_METRIC = "cosine"
+
+METHOD_VECTOR_INDEX = "arango_vector_index"
+METHOD_UNAVAILABLE = "unavailable"
+
+
+class VectorSearchUnavailableError(RuntimeError):
+    """Raised when native vector search (ArangoDB 3.12+ index) is unavailable."""
 
 
 class ANNAdapter:
     """
-    Unified interface for approximate nearest neighbor search
-    
-    Automatically detects and uses the best available method:
-    1. ArangoDB native vector search (HNSW) if available (3.10+)
-    2. Brute-force cosine similarity as fallback
-    
-    Maintains backward compatibility with existing VectorBlockingStrategy usage.
+    Native-only vector search using ``APPROX_NEAR_COSINE`` (ArangoDB 3.12+).
+
+    Requires a ``vector`` index on the embedding field. Use
+    :meth:`ensure_vector_index` to create one. If native vector search is not
+    available, search methods raise :class:`VectorSearchUnavailableError`.
     """
-    
+
     def __init__(
         self,
         db: StandardDatabase,
         collection: str,
         embedding_field: str = 'embedding_vector',
-        force_brute_force: bool = False
+        metric: str = DEFAULT_VECTOR_METRIC,
     ):
-        """
-        Initialize ANN adapter
-        
-        Args:
-            db: ArangoDB database connection
-            collection: Collection name containing vectors
-            embedding_field: Field name containing embeddings
-            force_brute_force: If True, always use brute-force (for testing/comparison)
-            
-        Raises:
-            ValueError: If collection or embedding_field invalid
-        """
         self.db = db
         self.collection = validate_collection_name(collection)
         self.embedding_field = validate_field_name(embedding_field)
-        self.force_brute_force = force_brute_force
-        
+        self.metric = metric
+
         self.logger = logging.getLogger(__name__)
-        
-        # Detect capabilities
-        self._arango_version = None
-        self._vector_search_available = False
-        self._method = None
-        
-        if not force_brute_force:
-            self._detect_capabilities()
-        else:
-            self._method = 'brute_force'
-            self.logger.info("Forced brute-force mode (force_brute_force=True)")
-    
+
+        self._arango_version: Optional[Tuple[int, int, int]] = None
+        self._has_vector_index = False
+        self._detect_capabilities()
+
+    # ------------------------------------------------------------------
+    # Capability detection
+    # ------------------------------------------------------------------
+
     def _detect_capabilities(self) -> None:
-        """Detect ArangoDB version and vector search capabilities"""
         try:
-            # Get ArangoDB version
-            version_info = self.db.properties()
-            version_str = version_info.get('version', '')
-            
-            # Parse version (e.g., "3.12.0" -> (3, 12, 0))
-            version_match = re.match(r'(\d+)\.(\d+)\.(\d+)', version_str)
-            if version_match:
-                major, minor, patch = map(int, version_match.groups())
-                self._arango_version = (major, minor, patch)
-                
-                # Vector search available in 3.10+
-                if (major, minor) >= (3, 10):
-                    # Try to detect if vector search is actually available
-                    # by checking if we can query with vector functions
-                    self._vector_search_available = self._test_vector_search()
-                else:
-                    self._vector_search_available = False
-            else:
-                self.logger.warning(f"Could not parse ArangoDB version: {version_str}")
-                self._vector_search_available = False
-            
-            # Set method
-            if self._vector_search_available:
-                self._method = 'arango_vector_search'
+            version_str = self._server_version()
+            match = re.match(r'(\d+)\.(\d+)\.(\d+)', version_str or "")
+            if match:
+                self._arango_version = tuple(int(x) for x in match.groups())  # type: ignore[assignment]
+            self._has_vector_index = self._version_ok() and self._vector_index_exists()
+            if self._has_vector_index:
                 self.logger.info(
-                    f"Using ArangoDB native vector search (version {version_str})"
+                    "Native vector index available (APPROX_NEAR_COSINE), version %s",
+                    version_str,
                 )
             else:
-                self._method = 'brute_force'
                 self.logger.info(
-                    f"Using brute-force cosine similarity "
-                    f"(ArangoDB version {version_str or 'unknown'}, "
-                    f"vector search not available)"
+                    "Native vector search unavailable (version %s, index present=%s)",
+                    version_str or "unknown", self._vector_index_exists_safe(),
                 )
-                
         except Exception as e:
-            self.logger.warning(f"Failed to detect ArangoDB capabilities: {e}")
-            self._method = 'brute_force'
-            self._vector_search_available = False
-    
-    def _test_vector_search(self) -> bool:
-        """
-        Test if ArangoDB vector search functions are available
-        
-        Returns:
-            True if vector search appears to be available
+            self.logger.warning("Failed to detect vector-search capabilities: %s", e)
+            self._has_vector_index = False
+
+    def _server_version(self) -> str:
+        """Return the ArangoDB server version string (e.g. '3.12.9-1').
+
+        Uses the server endpoint (``db.version()``); ``db.properties()`` returns
+        database metadata that does not include the server version. Falls back to
+        ``properties()`` for compatibility with simple fakes/mocks.
         """
         try:
-            # Try a simple test query that would use vector search if available
-            # We'll check if the collection exists and has at least one document
-            collection = self.db.collection(self.collection)
-            if collection.count() == 0:
-                # Empty collection - can't test, but assume available if version >= 3.10
+            version = self.db.version()
+            if isinstance(version, dict):
+                return version.get("version", "") or ""
+            return str(version or "")
+        except Exception:
+            try:
+                return self.db.properties().get("version", "") or ""
+            except Exception:
+                return ""
+
+    def _version_ok(self) -> bool:
+        return (
+            self._arango_version is not None
+            and self._arango_version[:2] >= ARANGODB_MIN_VERSION_FOR_VECTOR_INDEX
+        )
+
+    def _vector_index_exists(self) -> bool:
+        for index in self.db.collection(self.collection).indexes():
+            if index.get("type") == "vector" and self.embedding_field in (
+                index.get("fields") or []
+            ):
                 return True
-            
-            # Try to query with a simple vector operation
-            # Note: This is a heuristic - actual vector search requires proper index setup
-            # For now, we'll detect version capability and let the user configure indexes
-            # The actual search will fall back gracefully if indexes aren't configured
-            return True
-            
-        except Exception as e:
-            self.logger.debug(f"Vector search test failed: {e}")
+        return False
+
+    def _vector_index_exists_safe(self) -> bool:
+        try:
+            return self._vector_index_exists()
+        except Exception:
             return False
-    
+
+    @property
+    def native_available(self) -> bool:
+        return self._has_vector_index
+
     @property
     def method(self) -> str:
-        """Get the current search method being used"""
-        return self._method
-    
+        return METHOD_VECTOR_INDEX if self._has_vector_index else METHOD_UNAVAILABLE
+
     @property
     def arango_version(self) -> Optional[Tuple[int, int, int]]:
-        """Get detected ArangoDB version"""
         return self._arango_version
-    
+
+    def _require_native(self) -> None:
+        if self._has_vector_index:
+            return
+        version = (
+            ".".join(str(p) for p in self._arango_version)
+            if self._arango_version else "unknown"
+        )
+        raise VectorSearchUnavailableError(
+            "Vector search requires ArangoDB 3.12+ with a native vector index on "
+            f"'{self.collection}.{self.embedding_field}' (detected version "
+            f"{version}, vector index present={self._vector_index_exists_safe()}). "
+            "Upgrade to ArangoDB 3.12+ and create the index "
+            "(VectorBlockingStrategy(create_vector_index=True) or "
+            "ANNAdapter.ensure_vector_index()). Brute-force vector search is not "
+            "supported."
+        )
+
+    # ------------------------------------------------------------------
+    # Index management
+    # ------------------------------------------------------------------
+
+    def ensure_vector_index(
+        self,
+        dimension: Optional[int] = None,
+        n_lists: Optional[int] = None,
+        metric: Optional[str] = None,
+        training_iterations: int = 25,
+        default_n_probe: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Create a ``vector`` index on the embedding field if absent.
+
+        Requires ArangoDB 3.12+. Auto-detects ``dimension`` from a sample
+        document and derives ``n_lists`` (clamped to [1, n_docs]) when omitted.
+
+        The index params mirror ArangoDB's IVF vector index:
+        ``metric``, ``dimension``, ``nLists``, ``trainingIterations`` (IVF
+        training passes), and ``defaultNProbe`` (lists probed at query time;
+        defaults to ``min(nLists, 64)``). Omitting ``trainingIterations`` /
+        ``defaultNProbe`` can cause index creation to stall on some builds, so
+        they are always set.
+        """
+        if self._vector_index_exists_safe():
+            self._has_vector_index = True
+            return {"created": False, "reason": "index already exists", "method": self.method}
+
+        if not self._version_ok():
+            version = (
+                ".".join(str(p) for p in self._arango_version)
+                if self._arango_version else "unknown"
+            )
+            raise VectorSearchUnavailableError(
+                f"Vector index requires ArangoDB 3.12+ (detected {version})."
+            )
+
+        coll = self.db.collection(self.collection)
+        n_docs = coll.count()
+        if n_docs == 0:
+            raise RuntimeError(
+                f"Cannot build a vector index on empty collection '{self.collection}'."
+            )
+
+        if dimension is None:
+            dimension = self._detect_dimension()
+        if not dimension or dimension <= 0:
+            raise RuntimeError(
+                f"Could not determine embedding dimension for "
+                f"'{self.collection}.{self.embedding_field}'."
+            )
+
+        if n_lists is None:
+            n_lists = max(1, int(math.sqrt(n_docs)))
+        n_lists = max(1, min(n_lists, n_docs))
+
+        if default_n_probe is None:
+            default_n_probe = min(n_lists, 64)
+        default_n_probe = max(1, min(default_n_probe, n_lists))
+
+        definition = {
+            "type": "vector",
+            "fields": [self.embedding_field],
+            "params": {
+                "metric": metric or self.metric,
+                "dimension": int(dimension),
+                "nLists": int(n_lists),
+                "trainingIterations": int(training_iterations),
+                "defaultNProbe": int(default_n_probe),
+            },
+        }
+        result = coll.add_index(definition)
+        self._has_vector_index = True
+        self.logger.info(
+            "Created vector index on %s.%s (dim=%s, nLists=%s, metric=%s, "
+            "trainingIterations=%s, defaultNProbe=%s)",
+            self.collection, self.embedding_field, dimension, n_lists,
+            metric or self.metric, training_iterations, default_n_probe,
+        )
+        return {
+            "created": True,
+            "method": self.method,
+            "dimension": int(dimension),
+            "n_lists": int(n_lists),
+            "metric": metric or self.metric,
+            "training_iterations": int(training_iterations),
+            "default_n_probe": int(default_n_probe),
+            "index": result,
+        }
+
+    def _detect_dimension(self) -> Optional[int]:
+        cursor = self.db.aql.execute(
+            f"""
+            FOR doc IN @@col
+                FILTER doc.{self.embedding_field} != null
+                LIMIT 1
+                RETURN LENGTH(doc.{self.embedding_field})
+            """,
+            bind_vars={"@col": self.collection},
+        )
+        rows = list(cursor)
+        return int(rows[0]) if rows and rows[0] else None
+
+    # ------------------------------------------------------------------
+    # Search (native only)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _post_filter_conditions(
+        var: str,
+        blocking_field: Optional[str],
+        blocking_value: Optional[Any],
+        filters: Optional[Dict[str, Dict[str, Any]]],
+        bind_vars: Dict[str, Any],
+    ) -> List[str]:
+        conditions: List[str] = []
+        if blocking_field and blocking_value is not None:
+            conditions.append(f"{var}.{validate_field_name(blocking_field)} == @blocking_value")
+            bind_vars["blocking_value"] = blocking_value
+        if filters:
+            for field, condition in filters.items():
+                safe = validate_field_name(field)
+                if "equals" in condition:
+                    conditions.append(f"{var}.{safe} == @filter_{safe}")
+                    bind_vars[f"filter_{safe}"] = condition["equals"]
+                elif "in" in condition:
+                    conditions.append(f"{var}.{safe} IN @filter_{safe}")
+                    bind_vars[f"filter_{safe}"] = condition["in"]
+        return conditions
+
     def find_similar_vectors(
         self,
         query_vector: Optional[List[float]] = None,
@@ -158,371 +292,91 @@ class ANNAdapter:
         blocking_field: Optional[str] = None,
         blocking_value: Optional[Any] = None,
         filters: Optional[Dict[str, Dict[str, Any]]] = None,
-        exclude_self: bool = True
+        exclude_self: bool = True,
     ) -> List[Dict[str, Any]]:
-        """
-        Find similar vectors using the best available method
-        
-        Args:
-            query_vector: Query vector (if None, uses query_doc_key)
-            query_doc_key: Document key to find similar vectors for
-            similarity_threshold: Minimum cosine similarity (0-1)
-            limit: Maximum number of results
-            blocking_field: Optional field to filter by
-            blocking_value: Value for blocking_field filter
-            filters: Additional filters to apply
-            exclude_self: If True and query_doc_key provided, exclude that document
-            
-        Returns:
-            List of similar vectors with scores:
-            [{
-                'doc_key': str,
-                'similarity': float,
-                'method': str
-            }]
-            
-        Raises:
-            ValueError: If neither query_vector nor query_doc_key provided
-        """
+        """Single-query ANN search via APPROX_NEAR_COSINE (native only)."""
         if query_vector is None and query_doc_key is None:
             raise ValueError("Either query_vector or query_doc_key must be provided")
-        
-        if self._method == 'arango_vector_search':
-            return self._find_with_arango_vector_search(
-                query_vector=query_vector,
-                query_doc_key=query_doc_key,
-                similarity_threshold=similarity_threshold,
-                limit=limit,
-                blocking_field=blocking_field,
-                blocking_value=blocking_value,
-                filters=filters,
-                exclude_self=exclude_self
-            )
-        else:
-            return self._find_with_brute_force(
-                query_vector=query_vector,
-                query_doc_key=query_doc_key,
-                similarity_threshold=similarity_threshold,
-                limit=limit,
-                blocking_field=blocking_field,
-                blocking_value=blocking_value,
-                filters=filters,
-                exclude_self=exclude_self
-            )
-    
-    def _find_with_arango_vector_search(
-        self,
-        query_vector: Optional[List[float]],
-        query_doc_key: Optional[str],
-        similarity_threshold: float,
-        limit: int,
-        blocking_field: Optional[str],
-        blocking_value: Optional[Any],
-        filters: Optional[Dict[str, Dict[str, Any]]],
-        exclude_self: bool
-    ) -> List[Dict[str, Any]]:
-        """
-        Find similar vectors using ArangoDB native vector search
-        
-        Note: This attempts to use ArangoDB's vector search capabilities.
-        If not properly configured (e.g., no vector index), it will fall back
-        to brute-force automatically.
-        """
-        # First, get query vector if doc_key provided
+        self._require_native()
+
         if query_vector is None and query_doc_key:
             doc = self.db.collection(self.collection).get(query_doc_key)
             if not doc or self.embedding_field not in doc:
                 return []
             query_vector = doc[self.embedding_field]
-        
         if query_vector is None:
             return []
-        
-        # Build filter conditions
-        filter_conditions = []
-        if blocking_field and blocking_value is not None:
-            filter_conditions.append(f"doc.{blocking_field} == @blocking_value")
-        
-        # Add custom filters
-        if filters:
-            for field, condition in filters.items():
-                if 'equals' in condition:
-                    filter_conditions.append(f"doc.{field} == @filter_{field}")
-                elif 'in' in condition:
-                    filter_conditions.append(f"doc.{field} IN @filter_{field}")
-        
-        filter_clause = " AND ".join(filter_conditions) if filter_conditions else "true"
-        
-        # Build exclude clause
-        exclude_clause = ""
+
+        bind_vars: Dict[str, Any] = {"@col": self.collection, "query_vector": query_vector}
+        post = self._post_filter_conditions("doc", blocking_field, blocking_value, filters, bind_vars)
         if exclude_self and query_doc_key:
-            exclude_clause = "FILTER doc._key != @exclude_key"
-        
-        # Try ArangoDB vector search query
-        # Note: This uses ArangoDB 3.10+ vector similarity functions
-        # If not available, the query will fail and we'll fall back
-        try:
-            query = f"""
-                FOR doc IN {self.collection}
-                    FILTER doc.{self.embedding_field} != null
-                    FILTER {filter_clause}
-                    {exclude_clause}
-                    
-                    // Use ArangoDB vector similarity (if available)
-                    // Note: This requires proper vector index configuration
-                    LET similarity = COSINE_SIMILARITY(
-                        doc.{self.embedding_field},
-                        @query_vector
-                    )
-                    
-                    FILTER similarity >= @similarity_threshold
-                    SORT similarity DESC
-                    LIMIT @limit
-                    
-                    RETURN {{
-                        doc_key: doc._key,
-                        similarity: similarity,
-                        method: "arango_vector_search"
-                    }}
-            """
-            
-            bind_vars = {
-                'query_vector': query_vector,
-                'similarity_threshold': similarity_threshold,
-                'limit': limit
-            }
-            
-            if blocking_field and blocking_value is not None:
-                bind_vars['blocking_value'] = blocking_value
-            
-            if exclude_self and query_doc_key:
-                bind_vars['exclude_key'] = query_doc_key
-            
-            # Add filter bind vars
-            if filters:
-                for field, condition in filters.items():
-                    bind_vars[f'filter_{field}'] = condition.get('equals') or condition.get('in')
-            
-            cursor = self.db.aql.execute(query, bind_vars=bind_vars)
-            results = list(cursor)
-            
-            return results
-            
-        except Exception as e:
-            # Vector search not available or not configured - fall back to brute force
-            self.logger.debug(
-                f"ArangoDB vector search failed (may not be configured): {e}. "
-                f"Falling back to brute-force."
-            )
-            return self._find_with_brute_force(
-                query_vector=query_vector,
-                query_doc_key=query_doc_key,
-                similarity_threshold=similarity_threshold,
-                limit=limit,
-                blocking_field=blocking_field,
-                blocking_value=blocking_value,
-                filters=filters,
-                exclude_self=exclude_self
-            )
-    
-    def _find_with_brute_force(
-        self,
-        query_vector: Optional[List[float]],
-        query_doc_key: Optional[str],
-        similarity_threshold: float,
-        limit: int,
-        blocking_field: Optional[str],
-        blocking_value: Optional[Any],
-        filters: Optional[Dict[str, Dict[str, Any]]],
-        exclude_self: bool
-    ) -> List[Dict[str, Any]]:
-        """
-        Find similar vectors using brute-force cosine similarity
-        
-        This is the fallback method that works on all ArangoDB versions.
-        """
-        # Get query vector if doc_key provided
-        if query_vector is None and query_doc_key:
-            doc = self.db.collection(self.collection).get(query_doc_key)
-            if not doc or self.embedding_field not in doc:
-                return []
-            query_vector = doc[self.embedding_field]
-        
-        if query_vector is None:
-            return []
-        
-        # Build filter conditions
-        filter_conditions = []
-        if blocking_field and blocking_value is not None:
-            filter_conditions.append(f"doc.{blocking_field} == @blocking_value")
-        
-        # Add custom filters
-        if filters:
-            for field, condition in filters.items():
-                if 'equals' in condition:
-                    filter_conditions.append(f"doc.{field} == @filter_{field}")
-                elif 'in' in condition:
-                    filter_conditions.append(f"doc.{field} IN @filter_{field}")
-        
-        filter_clause = " AND ".join(filter_conditions) if filter_conditions else "true"
-        
-        # Build exclude clause
-        exclude_clause = ""
-        if exclude_self and query_doc_key:
-            exclude_clause = "FILTER doc._key != @exclude_key"
-        
-        # Brute-force cosine similarity query
+            post.append("doc._key != @exclude_key")
+            bind_vars["exclude_key"] = query_doc_key
+
+        over_fetch = limit * (4 if post else 1) + (1 if exclude_self else 0)
+        bind_vars.update({"over_k": over_fetch, "limit": limit, "threshold": similarity_threshold})
+        post_clause = ("\n                FILTER " + " AND ".join(post)) if post else ""
+
         query = f"""
-            FOR doc IN {self.collection}
-                FILTER doc.{self.embedding_field} != null
-                FILTER {filter_clause}
-                {exclude_clause}
-                
-                // Compute cosine similarity (with zero-magnitude protection)
-                LET dot_product = SUM(
-                    FOR i IN 0..LENGTH(doc.{self.embedding_field})-1
-                        RETURN doc.{self.embedding_field}[i] * @query_vector[i]
-                )
-                LET magnitude1 = SQRT(SUM(FOR x IN doc.{self.embedding_field} RETURN x*x))
-                LET magnitude2 = SQRT(SUM(FOR x IN @query_vector RETURN x*x))
-                
-                // Protect against division by zero
-                LET similarity = (magnitude1 > @min_magnitude AND magnitude2 > @min_magnitude)
-                    ? (dot_product / (magnitude1 * magnitude2))
-                    : 0.0
-                
-                FILTER similarity >= @similarity_threshold
-                SORT similarity DESC
+            FOR doc IN @@col
+                LET score = APPROX_NEAR_COSINE(doc.{self.embedding_field}, @query_vector)
+                SORT score DESC
+                LIMIT @over_k{post_clause}
+                FILTER score >= @threshold
                 LIMIT @limit
-                
                 RETURN {{
                     doc_key: doc._key,
-                    similarity: similarity,
-                    method: "brute_force"
+                    similarity: score,
+                    method: "{METHOD_VECTOR_INDEX}"
                 }}
         """
-        
-        bind_vars = {
-            'query_vector': query_vector,
-            'similarity_threshold': similarity_threshold,
-            'limit': limit,
-            'min_magnitude': MINIMUM_VECTOR_MAGNITUDE
-        }
-        
-        if blocking_field and blocking_value is not None:
-            bind_vars['blocking_value'] = blocking_value
-        
-        if exclude_self and query_doc_key:
-            bind_vars['exclude_key'] = query_doc_key
-        
-        # Add filter bind vars
-        if filters:
-            for field, condition in filters.items():
-                bind_vars[f'filter_{field}'] = condition.get('equals') or condition.get('in')
-        
-        cursor = self.db.aql.execute(query, bind_vars=bind_vars)
-        results = list(cursor)
-        
-        return results
-    
+        return list(self.db.aql.execute(query, bind_vars=bind_vars))
+
     def find_all_pairs(
         self,
         similarity_threshold: float = 0.7,
         limit_per_entity: int = 20,
         blocking_field: Optional[str] = None,
-        filters: Optional[Dict[str, Dict[str, Any]]] = None
+        filters: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Find all similar pairs in the collection (used by VectorBlockingStrategy)
-        
-        This method generates candidate pairs by comparing all documents with embeddings.
-        
-        Args:
-            similarity_threshold: Minimum cosine similarity
-            limit_per_entity: Maximum candidates per document
-            blocking_field: Optional field to block on (only compare within same value)
-            filters: Additional filters
-            
-        Returns:
-            List of candidate pairs:
-            [{
-                'doc1_key': str,
-                'doc2_key': str,
-                'similarity': float,
-                'method': str
-            }]
+        Per-source APPROX_NEAR_COSINE top-k search over the whole collection
+        (O(n*k)). Pairs are de-duplicated by the caller
+        (``BlockingStrategy._normalize_pairs``). Native only.
         """
-        # Build filter conditions
-        filter_conditions = []
-        if filters:
-            for field, condition in filters.items():
-                if 'equals' in condition:
-                    filter_conditions.append(f"doc1.{field} == @filter_{field}")
-                elif 'in' in condition:
-                    filter_conditions.append(f"doc1.{field} IN @filter_{field}")
-        
-        filter_clause = " AND ".join(filter_conditions) if filter_conditions else "true"
-        
-        # Build blocking clause
-        blocking_clause = ""
+        self._require_native()
+
+        bind_vars: Dict[str, Any] = {
+            "@col": self.collection,
+            "threshold": similarity_threshold,
+            "limit": limit_per_entity,
+        }
+        outer = self._post_filter_conditions("doc1", None, None, filters, bind_vars)
+        outer_clause = ("\n                FILTER " + " AND ".join(outer)) if outer else ""
+
+        inner = ["doc2._key != doc1._key"]
         if blocking_field:
-            blocking_clause = f"AND doc1.{blocking_field} == doc2.{blocking_field}"
-        
-        # Use brute-force for pair generation (more predictable)
-        # Vector search is better for single-query scenarios
+            safe = validate_field_name(blocking_field)
+            inner.append(f"doc2.{safe} == doc1.{safe}")
+        inner_clause = " AND ".join(inner)
+
+        bind_vars["over_k"] = limit_per_entity * (4 if blocking_field else 1) + 1
+
         query = f"""
-            FOR doc1 IN {self.collection}
-                FILTER doc1.{self.embedding_field} != null
-                FILTER {filter_clause}
-                
-                // Find similar documents
-                FOR doc2 IN {self.collection}
-                    FILTER doc2.{self.embedding_field} != null
-                    FILTER doc1._key < doc2._key  // Avoid duplicates and self-pairs
-                    {blocking_clause}
-                    
-                    // Compute cosine similarity (with zero-magnitude protection)
-                    LET dot_product = SUM(
-                        FOR i IN 0..LENGTH(doc1.{self.embedding_field})-1
-                            RETURN doc1.{self.embedding_field}[i] * doc2.{self.embedding_field}[i]
-                    )
-                    LET magnitude1 = SQRT(SUM(FOR x IN doc1.{self.embedding_field} RETURN x*x))
-                    LET magnitude2 = SQRT(SUM(FOR x IN doc2.{self.embedding_field} RETURN x*x))
-                    
-                    // Protect against division by zero
-                    LET similarity = (magnitude1 > @min_magnitude AND magnitude2 > @min_magnitude)
-                        ? (dot_product / (magnitude1 * magnitude2))
-                        : 0.0
-                    
-                    FILTER similarity >= @similarity_threshold
-                    
-                    SORT similarity DESC
-                    LIMIT @limit_per_entity
-                    
+            FOR doc1 IN @@col
+                FILTER doc1.{self.embedding_field} != null{outer_clause}
+                FOR doc2 IN @@col
+                    LET score = APPROX_NEAR_COSINE(doc2.{self.embedding_field}, doc1.{self.embedding_field})
+                    SORT score DESC
+                    LIMIT @over_k
+                    FILTER {inner_clause}
+                    FILTER score >= @threshold
+                    LIMIT @limit
                     RETURN {{
                         doc1_key: doc1._key,
                         doc2_key: doc2._key,
-                        similarity: similarity,
-                        method: @method
+                        similarity: score,
+                        method: "{METHOD_VECTOR_INDEX}"
                     }}
         """
-        
-        bind_vars = {
-            'similarity_threshold': similarity_threshold,
-            'limit_per_entity': limit_per_entity,
-            'min_magnitude': MINIMUM_VECTOR_MAGNITUDE,
-            'method': self._method
-        }
-        
-        # Add filter bind vars
-        if filters:
-            for field, condition in filters.items():
-                bind_vars[f'filter_{field}'] = condition.get('equals') or condition.get('in')
-        
-        try:
-            cursor = self.db.aql.execute(query, bind_vars=bind_vars)
-            pairs = list(cursor)
-            return pairs
-        except Exception as e:
-            self.logger.error(f"Pair generation query failed: {e}")
-            raise
+        return list(self.db.aql.execute(query, bind_vars=bind_vars))

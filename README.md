@@ -89,7 +89,7 @@ Optional AI stages can be inserted into the pipeline:
 |----------|----------|
 | **Exact / COLLECT** | High-precision blocking on email, phone, composite keys |
 | **BM25 / ArangoSearch** | Fuzzy text matching (400x faster than Levenshtein) |
-| **Vector / ANN** | Semantic similarity via sentence-transformers embeddings |
+| **Vector / ANN** | Semantic similarity via sentence-transformers embeddings; **requires** ArangoDB 3.12+ with a native `APPROX_NEAR_COSINE` vector index (no brute-force fallback) |
 | **Geographic** | Proximity-based blocking with coordinate distance |
 | **LSH** | Locality-sensitive hashing for high-dimensional data |
 | **Graph Traversal** | Shared-identifier network analysis |
@@ -291,7 +291,7 @@ Entity resolution requires document storage, graph traversal, full-text search, 
 - **Documents** — flexible schema for heterogeneous source records
 - **Graphs** — native WCC, traversals, and relationship modeling
 - **ArangoSearch** — integrated full-text search with phonetic, n-gram, and BM25 analyzers
-- **Vectors** — embedding storage and ANN search in ArangoDB 3.12+
+- **Vectors** — embedding storage with native vector-index ANN search (`APPROX_NEAR_COSINE`); vector blocking requires ArangoDB 3.12+ (no brute-force fallback)
 
 This eliminates the integration overhead of Elasticsearch + Neo4j + PostgreSQL stacks and keeps blocking, similarity, clustering, and golden records in a single transactional system.
 

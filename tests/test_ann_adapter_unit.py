@@ -1,119 +1,152 @@
+"""Unit tests for the native-only ANNAdapter (detection, errors, index mgmt).
+
+ANNAdapter has no brute-force fallback: vector search requires ArangoDB 3.12+
+with a vector index, else it raises VectorSearchUnavailableError. These tests
+use a fake ArangoDB and do not require a running server.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
 import pytest
 
-from entity_resolution.similarity.ann_adapter import ANNAdapter
+from entity_resolution.similarity.ann_adapter import (
+    ANNAdapter,
+    VectorSearchUnavailableError,
+    METHOD_VECTOR_INDEX,
+    METHOD_UNAVAILABLE,
+)
 
 
-class _FakeCollection:
-    def __init__(self, docs: Dict[str, Dict[str, Any]]):
-        self._docs = docs
+class _FakeColl:
+    def __init__(self, docs=None, indexes=None):
+        self._docs = docs or {}
+        self._indexes = list(indexes or [])
+        self.added: List[Dict[str, Any]] = []
 
-    def get(self, key: str):
+    def indexes(self):
+        return self._indexes
+
+    def count(self):
+        return len(self._docs)
+
+    def get(self, key):
         return self._docs.get(key)
 
-    def count(self) -> int:
-        return len(self._docs)
+    def add_index(self, definition):
+        self._indexes.append(definition)
+        self.added.append(definition)
+        return {"id": "idx/1", **definition}
 
 
 class _FakeAQL:
-    def __init__(self):
+    def __init__(self, dim=384):
         self.calls: List[Dict[str, Any]] = []
-        self.raise_on_contains: Optional[str] = None
-        self._return_rows: List[List[Dict[str, Any]]] = []
+        self.dim = dim
+        self.rows: List[List[Dict[str, Any]]] = []
 
-    def queue(self, rows: List[Dict[str, Any]]) -> None:
-        self._return_rows.append(rows)
+    def queue(self, rows):
+        self.rows.append(rows)
 
     def execute(self, query, bind_vars=None, **kwargs):
         q = str(query)
-        self.calls.append({"query": q, "bind_vars": dict(bind_vars or {}), "kwargs": dict(kwargs)})
-        if self.raise_on_contains and self.raise_on_contains in q:
-            raise RuntimeError("query failed")
-        return list(self._return_rows.pop(0) if self._return_rows else [])
+        self.calls.append({"query": q, "bind_vars": dict(bind_vars or {})})
+        if "RETURN LENGTH(" in q:
+            return iter([self.dim])
+        return list(self.rows.pop(0) if self.rows else [])
 
 
 class _FakeDB:
-    def __init__(self, version: str = "3.12.0", docs: Optional[Dict[str, Dict[str, Any]]] = None):
+    def __init__(self, version="3.12.0", docs=None, indexes=None, dim=384):
         self._version = version
-        self._docs = docs or {}
-        self.aql = _FakeAQL()
+        self._coll = _FakeColl(docs, indexes)
+        self.aql = _FakeAQL(dim=dim)
 
     def properties(self):
         return {"version": self._version}
 
-    def collection(self, name: str):
-        assert name == "customers"
-        return _FakeCollection(self._docs)
+    def collection(self, name):
+        return self._coll
 
 
-def test_init_force_brute_force_sets_method() -> None:
-    db = _FakeDB()
-    adapter = ANNAdapter(db=db, collection="customers", force_brute_force=True)
-    assert adapter.method == "brute_force"
+VEC_INDEX = {"type": "vector", "fields": ["embedding_vector"], "params": {"dimension": 384}}
 
 
-def test_detect_capabilities_parses_version_and_sets_method() -> None:
-    db = _FakeDB(version="3.12.1")
-    adapter = ANNAdapter(db=db, collection="customers", force_brute_force=False)
-    assert adapter.method in ("arango_vector_search", "brute_force")
-    assert adapter.arango_version == (3, 12, 1)
+# --- detection -------------------------------------------------------------
+
+def test_native_available_with_index_on_312():
+    a = ANNAdapter(db=_FakeDB(version="3.12.0", indexes=[VEC_INDEX]), collection="customers")
+    assert a.native_available is True
+    assert a.method == METHOD_VECTOR_INDEX
+    assert a.arango_version == (3, 12, 0)
 
 
-def test_find_similar_vectors_requires_vector_or_doc_key() -> None:
-    db = _FakeDB()
-    adapter = ANNAdapter(db=db, collection="customers", force_brute_force=True)
+def test_unavailable_without_index():
+    a = ANNAdapter(db=_FakeDB(version="3.12.0", indexes=[]), collection="customers")
+    assert a.native_available is False
+    assert a.method == METHOD_UNAVAILABLE
+
+
+def test_unavailable_old_version_even_with_index():
+    a = ANNAdapter(db=_FakeDB(version="3.11.5", indexes=[VEC_INDEX]), collection="customers")
+    assert a.native_available is False
+    assert a.method == METHOD_UNAVAILABLE
+
+
+# --- hard gate (no brute-force fallback) -----------------------------------
+
+def test_find_all_pairs_raises_when_unavailable():
+    a = ANNAdapter(db=_FakeDB(version="3.11.0", indexes=[]), collection="customers")
+    with pytest.raises(VectorSearchUnavailableError):
+        a.find_all_pairs()
+
+
+def test_find_similar_vectors_raises_when_unavailable():
+    a = ANNAdapter(db=_FakeDB(version="3.11.0", indexes=[]), collection="customers")
+    with pytest.raises(VectorSearchUnavailableError):
+        a.find_similar_vectors(query_vector=[1.0, 0.0])
+
+
+def test_find_similar_vectors_requires_vector_or_doc_key():
+    a = ANNAdapter(db=_FakeDB(version="3.12.0", indexes=[VEC_INDEX]), collection="customers")
     with pytest.raises(ValueError):
-        adapter.find_similar_vectors(query_vector=None, query_doc_key=None)
+        a.find_similar_vectors(query_vector=None, query_doc_key=None)
 
 
-def test_find_similar_vectors_fetches_query_vector_from_doc_key_and_excludes_self() -> None:
-    db = _FakeDB(docs={"a": {"_key": "a", "embedding_vector": [1.0, 0.0]}})
-    db.aql.queue([{"doc_key": "b", "similarity": 0.9, "method": "brute_force"}])
+# --- index management ------------------------------------------------------
 
-    adapter = ANNAdapter(db=db, collection="customers", force_brute_force=True)
-    res = adapter.find_similar_vectors(query_vector=None, query_doc_key="a", limit=5, exclude_self=True)
-    assert res and res[0]["doc_key"] == "b"
-    call = db.aql.calls[-1]
-    assert "FILTER doc._key != @exclude_key" in call["query"]
-    assert call["bind_vars"]["exclude_key"] == "a"
+def test_ensure_vector_index_creates_with_detected_dimension():
+    db = _FakeDB(version="3.12.0", docs={"a": {"_key": "a"}, "b": {"_key": "b"}}, indexes=[], dim=384)
+    a = ANNAdapter(db=db, collection="customers")
+    assert a.native_available is False
 
-
-def test_find_with_arango_vector_search_falls_back_to_brute_force_on_query_failure() -> None:
-    # vector search query will raise, brute force will return
-    db = _FakeDB(docs={"a": {"_key": "a", "embedding_vector": [1.0, 0.0]}})
-    db.aql.raise_on_contains = "COSINE_SIMILARITY"
-    db.aql.queue([{"doc_key": "x", "similarity": 0.8, "method": "brute_force"}])
-
-    adapter = ANNAdapter(db=db, collection="customers", force_brute_force=False)
-    # Force method to attempt vector search path
-    adapter._method = "arango_vector_search"
-
-    res = adapter.find_similar_vectors(
-        query_vector=None,
-        query_doc_key="a",
-        similarity_threshold=0.7,
-        limit=10,
-        blocking_field="state",
-        blocking_value="CA",
-        filters={"city": {"equals": "SF"}},
-    )
-    assert res and res[0]["method"] == "brute_force"
-    # brute-force bind vars include filters
-    last = db.aql.calls[-1]["bind_vars"]
-    assert last["blocking_value"] == "CA"
-    assert last["filter_city"] == "SF"
+    result = a.ensure_vector_index()
+    assert result["created"] is True
+    assert result["dimension"] == 384
+    assert result["n_lists"] >= 1
+    assert a.native_available is True
+    created = db.collection("customers").added[-1]
+    assert created["type"] == "vector"
+    assert created["fields"] == ["embedding_vector"]
+    assert created["params"]["dimension"] == 384
+    assert created["params"]["metric"] == "cosine"
+    # IVF params required by ArangoDB's vector index (omitting these can stall creation).
+    assert created["params"]["trainingIterations"] == 25
+    assert created["params"]["defaultNProbe"] == min(created["params"]["nLists"], 64)
 
 
-def test_find_all_pairs_builds_query_and_binds_method_and_filters() -> None:
-    db = _FakeDB()
-    db.aql.queue([{"doc1_key": "1", "doc2_key": "2", "similarity": 0.9, "method": "brute_force"}])
-    adapter = ANNAdapter(db=db, collection="customers", force_brute_force=True)
-    pairs = adapter.find_all_pairs(similarity_threshold=0.8, limit_per_entity=3, blocking_field="state", filters={"state": {"equals": "CA"}})
-    assert pairs and pairs[0]["doc1_key"] == "1"
-    call = db.aql.calls[-1]
-    assert call["bind_vars"]["method"] == "brute_force"
-    assert call["bind_vars"]["filter_state"] == "CA"
+def test_ensure_vector_index_noop_when_exists():
+    a = ANNAdapter(db=_FakeDB(version="3.12.0", indexes=[VEC_INDEX]), collection="customers")
+    assert a.ensure_vector_index()["created"] is False
 
+
+def test_ensure_vector_index_rejects_old_version():
+    a = ANNAdapter(db=_FakeDB(version="3.11.0", docs={"a": {"_key": "a"}}, indexes=[]), collection="customers")
+    with pytest.raises(VectorSearchUnavailableError):
+        a.ensure_vector_index()
+
+
+def test_n_lists_clamped_to_doc_count():
+    a = ANNAdapter(db=_FakeDB(version="3.12.0", docs={"a": {"_key": "a"}}, indexes=[], dim=8), collection="customers")
+    assert a.ensure_vector_index(n_lists=999)["n_lists"] == 1
