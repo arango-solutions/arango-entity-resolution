@@ -111,6 +111,8 @@ async def run_pipeline(
         "completed_at": None,
         "result": None,
         "error": None,
+        # Stage progress events appended during the run; streamed by the WS.
+        "progress_events": [],
     }
 
     if not db.has_collection(_RUNS_COLLECTION):
@@ -129,14 +131,37 @@ def _execute_pipeline(db, run_id: str, config_dict: Dict[str, Any]) -> None:
     from entity_resolution.config.er_config import ERPipelineConfig
     from entity_resolution.core.configurable_pipeline import ConfigurableERPipeline
 
+    def on_progress(event: Dict[str, Any]) -> None:
+        # Persist each stage event so the WebSocket can stream it to the UI.
+        _append_event(db, run_id, event)
+
     try:
         er_config = ERPipelineConfig.from_dict(config_dict)
         pipeline = ConfigurableERPipeline(db=db, config=er_config)
-        result = pipeline.run()
+        result = pipeline.run(on_progress=on_progress)
 
         _update_run(db, run_id, status="completed", result=result)
     except Exception as exc:
         _update_run(db, run_id, status="failed", error=str(exc))
+
+
+def _append_event(db, run_id: str, event: Dict[str, Any]) -> None:
+    """Atomically append a progress event to the run document."""
+    if not db.has_collection(_RUNS_COLLECTION):
+        return
+    try:
+        db.aql.execute(
+            """
+            FOR r IN @@coll
+                FILTER r._key == @key
+                UPDATE r WITH {
+                    progress_events: PUSH(r.progress_events != null ? r.progress_events : [], @event)
+                } IN @@coll
+            """,
+            bind_vars={"@coll": _RUNS_COLLECTION, "key": run_id, "event": event},
+        )
+    except Exception:
+        pass
 
 
 def _update_run(db, run_id: str, **fields: Any) -> None:

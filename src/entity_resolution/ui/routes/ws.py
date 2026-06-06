@@ -29,8 +29,10 @@ async def pipeline_progress(websocket: WebSocket, run_id: str) -> None:
     db = websocket.app.state.db
     runs_coll = "_er_pipeline_runs"
 
+    _STAGE_EVENTS = {"stage_start", "stage_progress", "stage_complete", "stage_error"}
+
     try:
-        last_status = None
+        sent = 0  # number of progress_events already forwarded
         while True:
             if not db.has_collection(runs_coll):
                 await websocket.send_json({"type": "error", "detail": "No pipeline runs collection"})
@@ -45,30 +47,32 @@ async def pipeline_progress(websocket: WebSocket, run_id: str) -> None:
                 await websocket.send_json({"type": "error", "detail": f"Run {run_id} not found"})
                 break
 
-            current_status = doc.get("status")
-            if current_status != last_status:
-                await websocket.send_json({
-                    "type": "status_change",
-                    "run_id": run_id,
-                    "status": current_status,
-                    "started_at": doc.get("started_at"),
-                    "completed_at": doc.get("completed_at"),
-                })
-                last_status = current_status
+            # Forward any new stage events emitted by the pipeline's on_progress
+            # callback (persisted to the run document by the pipeline route).
+            events = doc.get("progress_events") or []
+            for event in events[sent:]:
+                if event.get("type") in _STAGE_EVENTS:
+                    await websocket.send_json(event)
+            sent = len(events)
 
+            current_status = doc.get("status")
             if current_status in ("completed", "failed"):
-                summary: Dict[str, Any] = {
-                    "type": "pipeline_complete" if current_status == "completed" else "pipeline_failed",
-                    "run_id": run_id,
-                }
                 if current_status == "completed":
-                    summary["result"] = doc.get("result")
+                    await websocket.send_json({
+                        "type": "pipeline_complete",
+                        "run_id": run_id,
+                        "summary": doc.get("result"),
+                        "result": doc.get("result"),
+                    })
                 else:
-                    summary["error"] = doc.get("error")
-                await websocket.send_json(summary)
+                    await websocket.send_json({
+                        "type": "pipeline_failed",
+                        "run_id": run_id,
+                        "error": doc.get("error"),
+                    })
                 break
 
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.5)
 
     except WebSocketDisconnect:
         pass

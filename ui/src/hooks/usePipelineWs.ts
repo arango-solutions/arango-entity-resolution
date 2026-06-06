@@ -33,12 +33,13 @@ interface UsePipelineWsReturn {
   summary: Record<string, unknown> | null;
 }
 
+// Matches the phases emitted by ConfigurableERPipeline.run(); the optional
+// "embedding" phase is appended dynamically when present in the config.
 const DEFAULT_STAGES: StageState[] = [
   { name: "blocking", status: "waiting" },
   { name: "similarity", status: "waiting" },
-  { name: "llm_curation", status: "waiting" },
+  { name: "edges", status: "waiting" },
   { name: "clustering", status: "waiting" },
-  { name: "golden_records", status: "waiting" },
 ];
 
 function formatStageName(name: string): string {

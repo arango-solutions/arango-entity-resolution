@@ -615,3 +615,58 @@ class TestExport:
     def test_download_file_not_found(self, client):
         resp = client.get("/api/export/customers/download/does_not_exist.json")
         assert resp.status_code == 404
+
+
+# ===================================================================
+# Pipeline progress WebSocket
+# ===================================================================
+
+class _WsColl:
+    def __init__(self, doc):
+        self._doc = doc
+
+    def get(self, key):
+        return self._doc
+
+
+class _WsDB:
+    def __init__(self, doc):
+        self._doc = doc
+
+    def has_collection(self, name):
+        return True
+
+    def collection(self, name):
+        return _WsColl(self._doc)
+
+
+class TestPipelineWebSocket:
+
+    def test_ws_streams_stage_events_then_completion(self):
+        run_doc = {
+            "_key": "r1",
+            "status": "completed",
+            "result": {"clustering": {"clusters_found": 2}},
+            "progress_events": [
+                {"type": "stage_start", "stage": "blocking"},
+                {"type": "stage_complete", "stage": "blocking", "result": {"candidate_pairs": 5}},
+                # The pipeline also emits a pipeline_complete event; the WS must
+                # NOT forward it (it generates its own terminal event).
+                {"type": "pipeline_complete", "summary": {}},
+            ],
+        }
+        client = TestClient(create_app(db=_WsDB(run_doc)))
+        with client.websocket_connect("/ws/pipeline/r1") as ws:
+            msgs = [ws.receive_json() for _ in range(3)]
+        types = [m["type"] for m in msgs]
+        assert types == ["stage_start", "stage_complete", "pipeline_complete"]
+        assert msgs[1]["stage"] == "blocking"
+        assert msgs[2]["summary"] == {"clustering": {"clusters_found": 2}}
+
+    def test_ws_emits_failure(self):
+        run_doc = {"_key": "r2", "status": "failed", "error": "boom", "progress_events": []}
+        client = TestClient(create_app(db=_WsDB(run_doc)))
+        with client.websocket_connect("/ws/pipeline/r2") as ws:
+            msg = ws.receive_json()
+        assert msg["type"] == "pipeline_failed"
+        assert msg["error"] == "boom"
