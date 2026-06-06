@@ -225,7 +225,7 @@ class GeographicBlockingStrategy(BlockingStrategy):
         
         # Add filters
         if self.filters:
-            conditions, filter_bind_vars = self._build_filter_conditions(self.filters, {})
+            conditions, filter_bind_vars = self._build_filter_conditions(self.filters)
             # store for use in _build_bind_vars
             self._filter_bind_vars = filter_bind_vars
             for condition in conditions:
@@ -331,76 +331,6 @@ class GeographicBlockingStrategy(BlockingStrategy):
     def _build_bind_vars(self) -> Dict[str, Any]:
         """Build bind variables for the query (includes filter bind vars)."""
         return getattr(self, '_filter_bind_vars', {})
-    
-    def _build_filter_conditions(
-        self,
-        field_filters: Dict[str, Any],
-        computed_field_map: Optional[Dict[str, str]] = None,
-    ) -> tuple[list[str], dict]:
-        """
-        Build AQL filter conditions.
-
-        String values are placed in bind vars to prevent AQL injection (C2).
-
-        Returns:
-            A 2-tuple of (conditions list, bind_vars dict).
-        """
-        conditions: list[str] = []
-        bind_vars: dict = {}
-
-        for field_name, filters in field_filters.items():
-            if not isinstance(filters, dict):
-                continue
-
-            field_ref = f"d.{field_name}"
-
-            # Not null filter
-            if filters.get('not_null'):
-                conditions.append(f"{field_ref} != null")
-
-            # Not equal filter
-            if 'not_equal' in filters:
-                not_equal_values = filters['not_equal']
-                if isinstance(not_equal_values, list):
-                    for i, value in enumerate(not_equal_values):
-                        var = f"_ne_{field_name}_{i}"
-                        bind_vars[var] = value
-                        conditions.append(f"{field_ref} != @{var}")
-
-            # Equals filter
-            if 'equals' in filters:
-                var = f"_eq_{field_name}"
-                bind_vars[var] = filters['equals']
-                conditions.append(f"{field_ref} == @{var}")
-
-            # Min length filter
-            if 'min_length' in filters:
-                conditions.append(f"LENGTH({field_ref}) >= {int(filters['min_length'])}")
-
-        return conditions, bind_vars
-    
-    def _estimate_blocks_processed(self, pairs: List[Dict[str, Any]]) -> int:
-        """
-        Estimate number of blocks processed from pair count.
-        
-        Args:
-            pairs: List of generated pairs
-        
-        Returns:
-            Estimated number of blocks
-        """
-        if not pairs:
-            return 0
-        
-        # Group pairs by their blocking keys to estimate blocks
-        block_signatures = set()
-        for pair in pairs:
-            if 'blocking_keys' in pair:
-                # Create a hashable signature from blocking keys
-                keys = tuple(sorted(pair['blocking_keys'].items()))
-                block_signatures.add(keys)
-        
-        return len(block_signatures)
     
     def __repr__(self) -> str:
         """String representation of the strategy."""

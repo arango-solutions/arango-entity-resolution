@@ -251,46 +251,14 @@ class GraphTraversalBlockingStrategy(BlockingStrategy):
         field_filters: Dict[str, Any],
     ) -> tuple[list[str], dict]:
         """
-        Build AQL filter conditions for intermediate nodes (uses ``node.`` prefix).
+        Build AQL filter conditions for intermediate nodes (``node.`` prefix).
 
-        Returns:
-            A 2-tuple of (conditions list, bind_vars dict). String values are
-            placed in bind vars to prevent AQL injection (C2).
+        Delegates operator logic to the shared base implementation, customizing
+        only the field reference prefix.
         """
-        conditions: list[str] = []
-        bind_vars: dict = {}
-
-        for field_name, filters in field_filters.items():
-            if not isinstance(filters, dict):
-                continue
-
-            field_ref = f"node.{field_name}"
-
-            # Not null filter
-            if filters.get('not_null'):
-                conditions.append(f"{field_ref} != null")
-
-            # Not equal filter
-            if 'not_equal' in filters:
-                not_equal_values = filters['not_equal']
-                if not isinstance(not_equal_values, list):
-                    not_equal_values = [not_equal_values]
-                for i, value in enumerate(not_equal_values):
-                    var = f"_ne_{field_name}_{i}"
-                    bind_vars[var] = value
-                    conditions.append(f"{field_ref} != @{var}")
-
-            # Equals filter
-            if 'equals' in filters:
-                var = f"_eq_{field_name}"
-                bind_vars[var] = filters['equals']
-                conditions.append(f"{field_ref} == @{var}")
-
-            # Min length filter
-            if 'min_length' in filters:
-                conditions.append(f"LENGTH({field_ref}) >= {int(filters['min_length'])}")
-
-        return conditions, bind_vars
+        return super()._build_filter_conditions(
+            field_filters, field_ref_fn=lambda name: f"node.{name}"
+        )
     
     def _count_unique_shared_nodes(self, pairs: List[Dict[str, Any]]) -> int:
         """

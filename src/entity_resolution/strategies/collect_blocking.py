@@ -207,70 +207,22 @@ class CollectBlockingStrategy(BlockingStrategy):
         computed_field_map: Optional[Dict[str, str]] = None,
     ) -> tuple[list[str], dict]:
         """
-        Build AQL filter conditions, handling both document fields and computed fields.
+        Build AQL filter conditions, resolving computed fields to their alias.
 
-        Overrides base implementation to support computed fields.
-        String values are placed in bind vars to prevent AQL injection (C2).
-
-        Returns:
-            A 2-tuple of (conditions list, bind_vars dict).
+        Delegates the operator logic to the shared base implementation,
+        customizing only how a field name maps to its AQL reference: a computed
+        field uses its temp alias, otherwise ``d.<field>``.
         """
-        conditions: list[str] = []
-        bind_vars: dict = {}
         computed_field_map = computed_field_map or {}
 
-        for field_name, filters in field_filters.items():
-            if not isinstance(filters, dict):
-                continue
-
-            # Determine if this is a computed field and get the correct reference
+        def ref(field_name: str) -> str:
             if field_name in computed_field_map:
-                field_ref = computed_field_map[field_name]
-            elif field_name in self.computed_fields:
-                field_ref = field_name
-            else:
-                field_ref = f"d.{field_name}"
+                return computed_field_map[field_name]
+            if field_name in self.computed_fields:
+                return field_name
+            return f"d.{field_name}"
 
-            # Not null filter
-            if filters.get('not_null'):
-                conditions.append(f"{field_ref} != null")
-
-            # Not equal filter (list of values to exclude)
-            if 'not_equal' in filters:
-                not_equal_values = filters['not_equal']
-                if isinstance(not_equal_values, list):
-                    for i, value in enumerate(not_equal_values):
-                        var = f"_ne_{field_name}_{i}"
-                        bind_vars[var] = value
-                        conditions.append(f"{field_ref} != @{var}")
-
-            # Equals filter
-            if 'equals' in filters:
-                var = f"_eq_{field_name}"
-                bind_vars[var] = filters['equals']
-                conditions.append(f"{field_ref} == @{var}")
-
-            # Min length filter
-            if 'min_length' in filters:
-                conditions.append(f"LENGTH({field_ref}) >= {int(filters['min_length'])}")
-
-            # Max length filter
-            if 'max_length' in filters:
-                conditions.append(f"LENGTH({field_ref}) <= {int(filters['max_length'])}")
-
-            # Contains filter
-            if 'contains' in filters:
-                var = f"_contains_{field_name}"
-                bind_vars[var] = filters['contains']
-                conditions.append(f"CONTAINS({field_ref}, @{var})")
-
-            # Regex filter
-            if 'regex' in filters:
-                var = f"_regex_{field_name}"
-                bind_vars[var] = filters['regex']
-                conditions.append(f"REGEX_TEST({field_ref}, @{var})")
-
-        return conditions, bind_vars
+        return super()._build_filter_conditions(field_filters, field_ref_fn=ref)
     
     def _build_collect_query(self) -> tuple[str, dict]:
         """
@@ -352,32 +304,6 @@ class CollectBlockingStrategy(BlockingStrategy):
         query_parts.append(return_clause)
 
         return "\n".join(query_parts), bind_vars
-    
-    def _estimate_blocks_processed(self, pairs: List[Dict[str, Any]]) -> int:
-        """
-        Estimate number of blocks processed from pair count.
-        
-        This is approximate since we don't track exact block counts.
-        
-        Args:
-            pairs: List of generated pairs
-        
-        Returns:
-            Estimated number of blocks
-        """
-        # Extract unique block sizes from pairs
-        if not pairs:
-            return 0
-        
-        # Group pairs by their blocking keys to estimate blocks
-        block_signatures = set()
-        for pair in pairs:
-            if 'blocking_keys' in pair:
-                # Create a hashable signature from blocking keys
-                keys = tuple(sorted(pair['blocking_keys'].items()))
-                block_signatures.add(keys)
-        
-        return len(block_signatures)
     
     def __repr__(self) -> str:
         """String representation of the strategy."""

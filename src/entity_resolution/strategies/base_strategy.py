@@ -6,7 +6,7 @@ consistent API and behavior.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 from arango.database import StandardDatabase
 import time
 from datetime import datetime
@@ -103,12 +103,19 @@ class BlockingStrategy(ABC):
     def _build_filter_conditions(
         self,
         field_filters: Dict[str, Any],
+        field_ref_fn: Optional[Callable[[str], str]] = None,
     ) -> tuple[list[str], dict[str, Any]]:
         """
         Build AQL filter conditions from filter specification.
 
+        This is the single, canonical filter builder shared by all blocking
+        strategies. Subclasses customize only the AQL field reference (e.g. a
+        ``node.`` prefix, or a computed-field alias) via ``field_ref_fn``.
+
         Args:
-            field_filters: Filter specifications for fields
+            field_filters: Filter specifications for fields.
+            field_ref_fn: Optional callable mapping a field name to its AQL
+                reference. Defaults to ``d.<field>``.
 
         Returns:
             A 2-tuple of:
@@ -120,6 +127,7 @@ class BlockingStrategy(ABC):
             being interpolated directly into the query string, which prevents
             AQL injection attacks.
         """
+        ref = field_ref_fn or (lambda name: f"d.{name}")
         conditions: list[str] = []
         bind_vars: dict[str, Any] = {}
 
@@ -129,47 +137,65 @@ class BlockingStrategy(ABC):
 
             # Validate field name to prevent AQL injection
             validate_field_name(field_name)
+            field_ref = ref(field_name)
 
             # Not null filter
             if filters.get('not_null'):
-                conditions.append(f"d.{field_name} != null")
+                conditions.append(f"{field_ref} != null")
 
-            # Not equal filter (list of values to exclude)
+            # Not equal filter (one value or a list of values to exclude)
             if 'not_equal' in filters:
                 not_equal_values = filters['not_equal']
-                if isinstance(not_equal_values, list):
-                    for i, value in enumerate(not_equal_values):
-                        var = f"_ne_{field_name}_{i}"
-                        bind_vars[var] = value
-                        conditions.append(f"d.{field_name} != @{var}")
+                if not isinstance(not_equal_values, list):
+                    not_equal_values = [not_equal_values]
+                for i, value in enumerate(not_equal_values):
+                    var = f"_ne_{field_name}_{i}"
+                    bind_vars[var] = value
+                    conditions.append(f"{field_ref} != @{var}")
 
             # Equals filter
             if 'equals' in filters:
                 var = f"_eq_{field_name}"
                 bind_vars[var] = filters['equals']
-                conditions.append(f"d.{field_name} == @{var}")
+                conditions.append(f"{field_ref} == @{var}")
 
             # Min length filter
             if 'min_length' in filters:
-                conditions.append(f"LENGTH(d.{field_name}) >= {int(filters['min_length'])}")
+                conditions.append(f"LENGTH({field_ref}) >= {int(filters['min_length'])}")
 
             # Max length filter
             if 'max_length' in filters:
-                conditions.append(f"LENGTH(d.{field_name}) <= {int(filters['max_length'])}")
+                conditions.append(f"LENGTH({field_ref}) <= {int(filters['max_length'])}")
 
             # Contains filter
             if 'contains' in filters:
                 var = f"_contains_{field_name}"
                 bind_vars[var] = filters['contains']
-                conditions.append(f"CONTAINS(d.{field_name}, @{var})")
+                conditions.append(f"CONTAINS({field_ref}, @{var})")
 
             # Regex filter
             if 'regex' in filters:
                 var = f"_regex_{field_name}"
                 bind_vars[var] = filters['regex']
-                conditions.append(f"REGEX_TEST(d.{field_name}, @{var})")
+                conditions.append(f"REGEX_TEST({field_ref}, @{var})")
 
         return conditions, bind_vars
+
+    def _estimate_blocks_processed(self, pairs: List[Dict[str, Any]]) -> int:
+        """
+        Estimate the number of blocks processed from generated pairs.
+
+        Groups pairs by their ``blocking_keys`` signature. Shared by blocking
+        strategies that record ``blocking_keys`` on each pair.
+        """
+        if not pairs:
+            return 0
+        block_signatures = set()
+        for pair in pairs:
+            if 'blocking_keys' in pair:
+                keys = tuple(sorted(pair['blocking_keys'].items()))
+                block_signatures.add(keys)
+        return len(block_signatures)
 
     
     def _update_statistics(self, pairs: List[Dict[str, Any]], execution_time: float):
