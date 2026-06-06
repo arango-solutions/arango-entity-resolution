@@ -150,3 +150,19 @@ def test_ensure_vector_index_rejects_old_version():
 def test_n_lists_clamped_to_doc_count():
     a = ANNAdapter(db=_FakeDB(version="3.12.0", docs={"a": {"_key": "a"}}, indexes=[], dim=8), collection="customers")
     assert a.ensure_vector_index(n_lists=999)["n_lists"] == 1
+
+
+def test_ensure_vector_index_converts_disabled_feature_error():
+    """If the server lacks --experimental-vector-index, surface a clear error."""
+    db = _FakeDB(version="3.12.0", docs={"a": {"_key": "a"}}, indexes=[], dim=8)
+
+    def _raise(definition):
+        raise RuntimeError(
+            "[HTTP 400][ERR 10] vector index feature is not enabled. "
+            "Run ArangoDB with `--experimental-vector-index` flag turned on."
+        )
+
+    db.collection("customers").add_index = _raise
+    a = ANNAdapter(db=db, collection="customers")
+    with pytest.raises(VectorSearchUnavailableError, match="experimental-vector-index"):
+        a.ensure_vector_index()

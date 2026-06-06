@@ -224,7 +224,16 @@ class ANNAdapter:
                 "defaultNProbe": int(default_n_probe),
             },
         }
-        result = coll.add_index(definition)
+        try:
+            result = coll.add_index(definition)
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "experimental-vector-index" in msg or "vector index feature is not enabled" in msg:
+                raise VectorSearchUnavailableError(
+                    "ArangoDB vector index feature is not enabled. Start the server "
+                    "with `--experimental-vector-index` to use native vector search."
+                ) from exc
+            raise
         self._has_vector_index = True
         self.logger.info(
             "Created vector index on %s.%s (dim=%s, nLists=%s, metric=%s, "
