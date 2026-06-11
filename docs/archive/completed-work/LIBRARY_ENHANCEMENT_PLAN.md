@@ -1,9 +1,14 @@
 # ArangoER Library Enhancement Plan
 ## Adding Advanced Entity Resolution Capabilities
 
-**Date:** November 12, 2025 (original), March 16, 2026 (updated)  
-**Status:** Phases 0–3 Completed; Phase 4 partially completed  
+**Date:** November 12, 2025 (original), March 16, 2026 (updated), April 28, 2026 (Phase 4 audit)  
+**Status:** All Phases (0–4) Completed  
 **Goal:** Enhance arango-entity-resolution library with production-proven ER features
+
+> **Archived (completed initiative).** All phases shipped through v3.5.1. This document
+> is retained as a historical record. Forward-looking follow-ups that grew out of this
+> plan are tracked in the living roadmap — see the [PRD](../../PRD.md) ("Other Future
+> Investigation Areas") and the [MCP API migration plan](../../development/MAINTAINABILITY_API_MIGRATION_PLAN.md).
 
 ---
 
@@ -862,7 +867,7 @@ See `docs/development/PHASE_0_COMPLETION_NOTES.md` for full details.
 
 ---
 
-### Phase 4: Integration & Documentation (Week 7-8)
+### Phase 4: Integration & Documentation (Week 7-8) — COMPLETED
 
 **Deliverables:**
 1. Multi-strategy orchestration utilities
@@ -873,23 +878,25 @@ See `docs/development/PHASE_0_COMPLETION_NOTES.md` for full details.
 6. Updated main library exports
 
 **Tasks:**
-- [ ] Create orchestration utilities
-- [ ] Update `__init__.py` exports
-- [ ] Write comprehensive API docs
-- [ ] Create migration guide
-- [ ] Add usage examples
-- [ ] Update README
-- [ ] Create performance comparison docs
-- [ ] Version bump and changelog
-- [ ] Add platform docs for Apple Silicon and Linux GPU setup
-- [ ] Add provider compatibility matrix (ORT/CoreML/CUDA/TensorRT)
-- [ ] Add rollout/rollback runbook for provider overrides
+- [x] Create orchestration utilities — `src/entity_resolution/core/orchestrator.py` (`MultiStrategyOrchestrator`)
+- [x] Update `__init__.py` exports — all 7 enhancement classes exported from `entity_resolution` (orchestrator, blocking strategies, similarity/edge/clustering services)
+- [x] Write comprehensive API docs — `docs/api/API_REFERENCE.md`
+- [x] Create migration guide — `docs/guides/MIGRATION_GUIDE_V2.md`, `docs/guides/MIGRATION_GUIDE_V3.md`
+- [x] Add usage examples — 13 examples under `examples/` (incl. `multi_strategy_orchestration.py`, `clustering_backend_comparison.py`, `onnx_runtime_embedding.py`, `vector_blocking_example.py`, `cross_collection_matching_examples.py`)
+- [x] Update README — UI section, MCP tools inventory, GAE clustering, GPU/device support, LLM curation
+- [x] Create performance comparison docs — `docs/guides/PERFORMANCE_GUIDE.md`
+- [x] Version bump and changelog — released through 3.5.1 with detailed CHANGELOG entries
+- [x] Add platform docs for Apple Silicon and Linux GPU setup — `docs/guides/PLATFORM_SETUP.md`
+- [x] Add provider compatibility matrix (ORT/CoreML/CUDA/TensorRT) — `docs/guides/PROVIDER_MATRIX.md` and `docs/guides/PROVIDER_COMPATIBILITY_MATRIX.md`
+- [x] Add rollout/rollback runbook for provider overrides — `docs/development/PROVIDER_ROLLOUT_RUNBOOK.md` (companion: `docs/development/RUNTIME_HEALTH_CI_RUNBOOK.md`)
+
+**Status (as of 2026-04-28 audit):** All Phase 4 deliverables shipped. GPU provider promotion (CoreML/CUDA/TensorRT as default) remains future work pending parity and quality gates — see "Release Alignment" below.
 
 **Success Criteria:**
-- All new classes properly exported
-- Documentation complete and clear
-- Migration path well-documented
-- Examples cover common use cases
+- [x] All new classes properly exported
+- [x] Documentation complete and clear
+- [x] Migration path well-documented
+- [x] Examples cover common use cases
 
 ---
 
@@ -1119,13 +1126,11 @@ GPU provider promotion (CoreML, CUDA, TensorRT) remains future work pending pari
 
 ## Next Steps
 
-1. **Review this plan** - Gather feedback on approach and priorities
-2. **Set up development environment** - Branch, testing infrastructure
-3. **Start Phase 0 (GPU foundation)** - Implement runtime/provider abstraction and baseline benchmarks
-4. **Iterate** - Get feedback, adjust as needed
-5. **Document** - Keep documentation in sync with code
-6. **Test** - Comprehensive testing throughout
-7. **Release** - Version bump with clear changelog
+This plan is complete (all phases shipped through 3.5.1). Forward-looking work that grew out of this plan but is intentionally **out of scope** here:
+
+1. **GPU provider promotion** — promote CoreML / CUDA / TensorRT from opt-in to default once parity and quality gates are met. Tracked via `docs/development/PROVIDER_ROLLOUT_RUNBOOK.md`.
+2. **MCP API maintainability migration** — see `docs/development/MAINTAINABILITY_API_MIGRATION_PLAN.md` for the canonical `options`-based request shape proposal.
+3. **UI Phase 4** — auth/RBAC, dark mode, responsive layout, tenant management. See `docs/architecture/ENTITY_RESOLUTION_UI.md` Phase 4 section.
 
 ---
 

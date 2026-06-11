@@ -203,6 +203,11 @@ See [Centralized ER Service Design](architecture/CENTRALIZED_ER_SERVICE.md) for 
 - `AddressERPipeline` first-class library class
 - Stricter anti-merge constraints and policy controls
 - Richer evaluator reports and benchmark datasets
+- MCP API maintainability migration to a canonical `options`-based request shape (see [MCP API Migration Plan](development/MAINTAINABILITY_API_MIGRATION_PLAN.md))
+
+> The original library enhancement plan (Phases 0–4) is complete and archived at
+> [docs/archive/completed-work/LIBRARY_ENHANCEMENT_PLAN.md](archive/completed-work/LIBRARY_ENHANCEMENT_PLAN.md);
+> its still-open follow-ups are captured in this section.
 
 ### Roadmap Principle
 
