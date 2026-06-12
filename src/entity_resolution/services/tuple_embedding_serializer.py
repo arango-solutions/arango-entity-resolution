@@ -52,7 +52,8 @@ class TupleEmbeddingSerializer:
         structured_paths: Optional[Dict[str, List[str]]] = None,
         separator: str = " | ",
         normalize_weights: bool = True,
-        include_missing_fields: bool = False
+        include_missing_fields: bool = False,
+        apply_weights: bool = False
     ):
         """
         Initialize tuple embedding serializer.
@@ -72,7 +73,13 @@ class TupleEmbeddingSerializer:
                 Default: True.
             include_missing_fields: Whether to include fields with None/missing values.
                 Default: False (excludes missing fields).
-        
+            apply_weights: Default for serialize()/serialize_batch(). When True,
+                field values are repeated proportionally to their weight so that
+                higher-weighted fields contribute more to the embedding text.
+                Default: False (weights stored but not applied). Note: changing
+                this changes serialized output, so embeddings generated with a
+                different setting are not comparable.
+
         Raises:
             ValueError: If field_order contains duplicates or invalid field names
             ValueError: If field_weights contains invalid weights (<0 or >1)
@@ -113,7 +120,15 @@ class TupleEmbeddingSerializer:
         self.separator = separator
         self.normalize_weights = normalize_weights
         self.include_missing_fields = include_missing_fields
-        
+        self.apply_weights = apply_weights
+
+        if self.field_weights and not self.apply_weights:
+            self.logger.warning(
+                "field_weights configured but apply_weights=False: weights will NOT "
+                "affect serialization. Pass apply_weights=True to the constructor "
+                "(or serialize()) to weight fields by repetition."
+            )
+
         self.logger.debug(
             f"Initialized TupleEmbeddingSerializer: "
             f"field_order={self.field_order}, "
@@ -197,63 +212,80 @@ class TupleEmbeddingSerializer:
         ]
         return sorted(all_fields)
     
+    # Cap on how many times a field value may be repeated when weighting is on.
+    MAX_WEIGHT_REPETITIONS = 5
+
     def serialize(
         self,
         record: Dict[str, Any],
-        apply_weights: bool = False
+        apply_weights: Optional[bool] = None
     ) -> str:
         """
         Serialize a database record to a deterministic string representation.
-        
+
         Args:
             record: Database record dictionary
             apply_weights: Whether to apply field weights in serialization.
-                If True, fields are repeated proportionally to their weights.
-                If False (default), weights are stored but not applied in serialization.
-                (Weights can be used later in embedding generation or similarity computation)
-        
+                If True, field values are repeated proportionally to their weight
+                relative to the smallest configured weight (capped at
+                MAX_WEIGHT_REPETITIONS) so heavier fields contribute more tokens.
+                If None (default), uses the constructor-level setting.
+
         Returns:
             Deterministic string representation of the record
-        
+
         Example:
             >>> serializer = TupleEmbeddingSerializer(
             ...     field_order=["name", "company"],
             ...     field_weights={"name": 0.7, "company": 0.3}
             ... )
-            >>> record = {"name": "John", "company": "Acme"}
-            >>> serialized = serializer.serialize(record)
-            >>> print(serialized)  # "John | Acme"
+            >>> serializer.serialize({"name": "John", "company": "Acme"})
+            'John | Acme'
+            >>> serializer.serialize({"name": "John", "company": "Acme"}, apply_weights=True)
+            'John | John | Acme'
         """
+        if apply_weights is None:
+            apply_weights = self.apply_weights
         field_order = self._determine_field_order(record)
-        
+
         # Extract field values
         field_values = []
         for field_name in field_order:
             value = self._get_field_value(record, field_name)
-            
+
             if value is None or value == "":
                 if self.include_missing_fields:
                     field_values.append("")
                 continue
-            
+
+            repetitions = 1
             if apply_weights and self.field_weights:
-                # Apply weights by repeating fields proportionally
-                weight = self.field_weights.get(field_name, 1.0 / len(field_order))
-                # Repeat field value based on weight (simplified approach)
-                # In practice, weights are better applied during embedding generation
-                field_values.append(value)
-            else:
-                field_values.append(value)
-        
+                repetitions = self._weight_repetitions(field_name)
+            field_values.extend([value] * repetitions)
+
         # Join with separator
         serialized = self.separator.join(field_values)
-        
+
         return serialized
+
+    def _weight_repetitions(self, field_name: str) -> int:
+        """
+        Number of times a field value is repeated under weighted serialization.
+
+        Scaled relative to the smallest configured positive weight: the lightest
+        field appears once, a field with twice its weight appears twice, capped
+        at MAX_WEIGHT_REPETITIONS. Fields without a configured weight get 1.
+        """
+        weight = self.field_weights.get(field_name)
+        if weight is None or weight <= 0:
+            return 1
+        min_weight = min(w for w in self.field_weights.values() if w > 0)
+        return max(1, min(self.MAX_WEIGHT_REPETITIONS, round(weight / min_weight)))
     
     def serialize_batch(
         self,
         records: List[Dict[str, Any]],
-        apply_weights: bool = False
+        apply_weights: Optional[bool] = None
     ) -> List[str]:
         """
         Serialize a batch of records.
@@ -302,6 +334,10 @@ class TupleEmbeddingSerializer:
             'normalize_weights': self.normalize_weights,
             'include_missing_fields': self.include_missing_fields
         }
+        # Only included when enabled so hashes of existing (default) configs
+        # remain stable across versions.
+        if self.apply_weights:
+            config['apply_weights'] = True
         config_str = json.dumps(config, sort_keys=True)
         return hashlib.md5(config_str.encode('utf-8')).hexdigest()
     
@@ -318,7 +354,8 @@ class TupleEmbeddingSerializer:
             'structured_paths': self.structured_paths,
             'separator': self.separator,
             'normalize_weights': self.normalize_weights,
-            'include_missing_fields': self.include_missing_fields
+            'include_missing_fields': self.include_missing_fields,
+            'apply_weights': self.apply_weights
         }
     
     @classmethod

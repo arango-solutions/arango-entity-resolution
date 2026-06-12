@@ -137,3 +137,7 @@ src/entity_resolution/ui/static/
 
 # Runtime artifacts (models, benchmarks, caches)
 artifacts/
+# Coverage and analysis artifacts (never track)
+coverage.json
+COVERAGE_SUMMARY.txt
+detailed_coverage_analysis_*.json

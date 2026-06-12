@@ -6,7 +6,7 @@ services:
     container_name: arango-entity-resolution-test
     restart: unless-stopped
     environment:
-      ARANGO_ROOT_PASSWORD: test_er_password_2025
+      ARANGO_ROOT_PASSWORD: ${ARANGO_TEST_PASSWORD:?Set ARANGO_TEST_PASSWORD (e.g. in .env) before starting the test database}
       ARANGO_NO_AUTH: false
     ports:
       - "8532:8529"

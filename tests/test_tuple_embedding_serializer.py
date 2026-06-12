@@ -312,3 +312,71 @@ class TestSerializationDeterminism:
         
         assert serializer1.serialize(record) == serializer2.serialize(record)
         assert serializer1.get_config_hash() == serializer2.get_config_hash()
+
+
+class TestWeightedSerialization:
+    """Weighted serialization repeats heavier fields proportionally."""
+
+    def test_weights_inert_by_default(self):
+        serializer = TupleEmbeddingSerializer(
+            field_order=["name", "company"],
+            field_weights={"name": 0.7, "company": 0.3},
+        )
+        record = {"name": "John", "company": "Acme"}
+        assert serializer.serialize(record) == "John | Acme"
+
+    def test_apply_weights_repeats_heavier_fields(self):
+        serializer = TupleEmbeddingSerializer(
+            field_order=["name", "company"],
+            field_weights={"name": 0.7, "company": 0.3},
+        )
+        record = {"name": "John", "company": "Acme"}
+        # 0.7 / 0.3 rounds to 2 repetitions for name, 1 for company
+        assert serializer.serialize(record, apply_weights=True) == "John | John | Acme"
+
+    def test_constructor_default_applies_weights(self):
+        serializer = TupleEmbeddingSerializer(
+            field_order=["name", "company"],
+            field_weights={"name": 0.7, "company": 0.3},
+            apply_weights=True,
+        )
+        record = {"name": "John", "company": "Acme"}
+        assert serializer.serialize(record) == "John | John | Acme"
+        # Explicit override still wins
+        assert serializer.serialize(record, apply_weights=False) == "John | Acme"
+
+    def test_repetitions_capped(self):
+        serializer = TupleEmbeddingSerializer(
+            field_order=["name", "note"],
+            field_weights={"name": 0.99, "note": 0.01},
+            apply_weights=True,
+        )
+        record = {"name": "John", "note": "x"}
+        parts = serializer.serialize(record).split(" | ")
+        assert parts.count("John") == TupleEmbeddingSerializer.MAX_WEIGHT_REPETITIONS
+        assert parts.count("x") == 1
+
+    def test_unweighted_field_gets_single_occurrence(self):
+        serializer = TupleEmbeddingSerializer(
+            field_order=["name", "email"],
+            field_weights={"name": 1.0},
+            apply_weights=True,
+        )
+        record = {"name": "John", "email": "j@x.com"}
+        assert serializer.serialize(record) == "John | j@x.com"
+
+    def test_config_hash_stable_for_default_and_distinct_when_enabled(self):
+        base = dict(field_order=["name"], field_weights={"name": 1.0})
+        default = TupleEmbeddingSerializer(**base)
+        enabled = TupleEmbeddingSerializer(**base, apply_weights=True)
+        assert default.get_config_hash() != enabled.get_config_hash()
+
+    def test_to_dict_round_trip(self):
+        serializer = TupleEmbeddingSerializer(
+            field_order=["name", "company"],
+            field_weights={"name": 0.7, "company": 0.3},
+            apply_weights=True,
+        )
+        clone = TupleEmbeddingSerializer.from_dict(serializer.to_dict())
+        record = {"name": "John", "company": "Acme"}
+        assert clone.serialize(record) == serializer.serialize(record)
