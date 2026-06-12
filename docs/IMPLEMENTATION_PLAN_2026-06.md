@@ -24,12 +24,14 @@ Sizing: **S** ≤ 2 days · **M** ≈ 3–7 days · **L** ≈ 2–4 weeks of foc
 
 - `apply_verdict(pair, verdict)`:
   - `no_match` → mark the similarity edge `suppressed: true, suppressed_by, suppressed_at` (never hard-delete; audit trail) via `SimilarityEdgeService` (deterministic keys at [similarity_edge_service.py:419](../src/entity_resolution/services/similarity_edge_service.py#L419) make the edge addressable from the pair).
-  - `match` on a pair below threshold → upsert a confirmed edge with `confirmed: true, confidence: 1.0`.
-- `recluster_component(member_key)`: incremental, scoped re-cluster — fetch the affected component via AQL traversal (excluding suppressed edges), re-run WCC on just that subgraph, rewrite only the affected cluster docs. Add `FILTER edge.suppressed != true` to every clustering backend's edge query (`clustering_backends/*.py`).
+  - `match` on a pair below threshold → upsert the edge with `confirmed: true, confirmed_by, confirmed_at`, **keeping the computed score untouched**. Do not overwrite `confidence` with 1.0: artificial 1.0s would distort every consumer of the score distribution — the 2.1 histogram, the 1.2 threshold sweep, and 1.1's EM sampling. The verdict lives in the flag, not the score; clustering honors it via the filter below, and score-distribution/EM consumers exclude verdict-bearing edges from their samples (verdicts enter 1.1/1.2 as *labels*, never as scores).
+- **Edge re-scoring vs verdict preservation:** `SimilarityEdgeService` currently inserts with `overwrite_mode='ignore'` ([similarity_edge_service.py:211](../src/entity_resolution/services/similarity_edge_service.py#L211)) — existing edges are never touched on re-run. That preserves verdict flags for free, but it also means re-scored values (0.2's FS posterior, 1.1's EM-learned parameters) never reach already-persisted edges. Change the upsert to a merge-update that rewrites score/confidence fields while preserving the verdict namespace (`suppressed*`, `confirmed*`); bulk edge rebuilds (truncate + recreate) are forbidden once verdicts exist. Regression test: re-run with changed weights updates edge scores and keeps the flags.
+- `recluster_component(member_key)`: incremental, scoped re-cluster — fetch the affected component via AQL traversal (excluding suppressed edges, including confirmed edges regardless of score), re-run WCC on just that subgraph, rewrite only the affected cluster docs. In every clustering backend's edge query (`clustering_backends/*.py`), add `FILTER edge.suppressed != true` and widen the threshold filter to `edge.score >= @threshold OR edge.confirmed == true` — a confirmed below-threshold edge must cluster; a suppressed above-threshold edge must not.
+- **Concurrency:** verdicts can race each other (two verdicts on the same component) and a running pipeline. Run `apply_verdict` + `recluster_component` inside an ArangoDB stream transaction over the edge and cluster collections, serialized per component via a short-lived lock doc (`_er_locks`, TTL index). Verdicts landing mid-pipeline-run are safe at the edge level because edge writes are merge-upserts; `recluster_component` waits on the lock.
 - Wire into the UI: `POST /api/review/verdict` ([ui/routes/review.py](../src/entity_resolution/ui/routes/review.py)) calls apply + recluster; response includes `clusters_changed` so the frontend can invalidate React Query caches and show "Cluster #42 split into 2" feedback.
 - Wire `ThresholdOptimizer` output into pipeline config: add `active_learning.auto_apply_thresholds: bool` to `ActiveLearningConfig` ([er_config.py:733](../src/entity_resolution/config/er_config.py#L733)); when set, `ConfigurableERPipeline` calls `optimize()` at run start and records applied thresholds in run stats.
 
-**Acceptance:** integration test: build 3-record chain cluster A–B–C; human rejects B–C; cluster splits into {A,B} and {C}; re-running the pipeline does not resurrect the suppressed edge; verdict + cluster change visible in UI.
+**Acceptance:** integration test: build 3-record chain cluster A–B–C; human rejects B–C; cluster splits into {A,B} and {C}; re-running the pipeline does not resurrect the suppressed edge; re-running with changed scoring parameters updates edge scores without clearing `suppressed`/`confirmed` flags; verdict + cluster change visible in UI.
 
 ### 0.2 Honest probabilistic scoring (M)
 
@@ -49,7 +51,7 @@ Sizing: **S** ≤ 2 days · **M** ≈ 3–7 days · **L** ≈ 2–4 weeks of foc
 
 ### 0.4 Fix GraphRAG provenance edges (S)
 
-[graph_rag.py:244-246](../src/entity_resolution/reasoning/graph_rag.py#L244): edges must run **document → entity**. Add a `document_collection` to the linker; `_from = document_collection/source_doc_key`, `_to = entity_collection/matched_key`. Migration script to repair existing self-loop edges (they carry `source_doc` as an attribute, so they're recoverable). Integration test traversing doc → extracted entities.
+[graph_rag.py:244-246](../src/entity_resolution/reasoning/graph_rag.py#L244): edges must run **document → entity**. Add a `document_collection` to the linker; `_from = document_collection/source_doc_key`, `_to = entity_collection/matched_key`. Migration script to repair existing self-loop edges (they carry `source_doc` as an attribute, so they're recoverable); when 1.0's migration runner lands, this script is re-registered as migration #001. Integration test traversing doc → extracted entities.
 
 ### 0.5 LLM hardening: parsing, cost, budget (M)
 
@@ -66,11 +68,30 @@ In [llm_verifier.py](../src/entity_resolution/reasoning/llm_verifier.py):
 - Consolidate `VERSION_HISTORY.md` + `VERSION_SUMMARY.md` into `CHANGELOG.md`; delete the stray `~/` directory; delete `tests/archive_broken/`.
 - Default `apply_weights=True` in `TupleEmbeddingSerializer` when field weights are configured (or remove the parameter) — currently configured weights are silently inert.
 
-**Phase 0 exit criteria:** review queue verdicts visibly change clusters; no exported API silently returns empty/fabricated results; LLM spend is bounded and reported.
+### 0.7 Golden-record staleness on cluster change (S)
+
+**Problem:** `GoldenRecordPersistenceService` upserts per-cluster documents but nothing invalidates them when clusters change — every cluster-mutating path (0.1 verdict re-clustering, 1.3 repair, 2.2 editing) leaves wrong golden records behind with no signal.
+
+- Stamp each golden record with a `source_cluster_hash` (hash of sorted member keys) at persistence time.
+- `recluster_component` (0.1) marks golden records of affected clusters `stale: true, stale_reason, stale_at`; deletes orphaned records whose cluster no longer exists.
+- `golden_records.auto_refresh: bool` config — when set, regenerate stale records immediately after re-cluster; otherwise they stay flagged.
+- UI: "stale" badge on `GoldenRecordsPage` with a regenerate action; `GET /api/golden-records` gains a `stale` filter.
+
+**Acceptance:** the 0.1 split test additionally asserts the old A–B–C golden record is marked stale (or regenerated as two records when `auto_refresh` is on) and no orphan survives.
+
+**Phase 0 exit criteria:** review queue verdicts visibly change clusters; no exported API silently returns empty/fabricated results; LLM spend is bounded and reported; cluster changes never leave stale golden records unflagged.
 
 ---
 
 ## Phase 1 — A Matching Core That Learns (target: v3.7.0)
+
+### 1.0 Schema versioning groundwork (M) — *lands before 1.1*
+
+Pulled forward from Phase 4: Phase 1 introduces the first system collections (`_er_model_params`, `_er_term_frequencies`) and Phase 2 adds `_er_audit_log` — schema versioning must exist before the first of these ships, not "before 4.0".
+
+- `_er_meta` collection holding the schema version, applied-migration list, and timestamps.
+- Idempotent migration runner: numbered migration modules, each checks-then-applies; runs automatically at pipeline/UI-server startup with a `--no-migrate` escape hatch; refuses to run against a newer schema than the code knows.
+- First migrations: create `_er_meta` itself, and re-register 0.4's GraphRAG self-loop repair script as migration #001 (no-op where it already ran).
 
 ### 1.1 EM parameter estimation for m/u probabilities (L) — *highest-leverage item*
 
@@ -79,8 +100,8 @@ New `src/entity_resolution/learning/em_estimator.py` (new `learning/` package):
 - **Input:** sampled comparison vectors. Sample candidate pairs from blocking output (cap ~1M pairs, reservoir sampling), compute per-field agreement levels using existing comparators from `similarity_service`.
 - **Algorithm:** classic FS EM — initialize m/u from current defaults; E-step computes match posteriors; M-step re-estimates per-field/per-level m, u and prior λ; iterate to convergence (tol 1e-5, max 50 iters). Pure numpy; no new heavy deps.
 - **Term-frequency adjustments** (Splink's second pillar): for high-cardinality fields (name, city), scale u-probability by relative value frequency — computed with one AQL `COLLECT ... WITH COUNT` per field, stored in a `_er_term_frequencies` collection at pipeline start.
-- **Integration:** `similarity.estimation: {method: em, sample_size, max_iterations}` in `SimilarityConfig`; `ConfigurableERPipeline` runs estimation between blocking and scoring when enabled; learned parameters persisted to `_er_model_params` (versioned, timestamped, with the config hash) so runs are reproducible and the UI can display them. CLI: `arango-er estimate --config ...`.
-- Flip default `scoring_method` to `fellegi_sunter` once this lands.
+- **Integration:** `similarity.estimation: {method: em, sample_size, max_iterations}` in `SimilarityConfig`; `ConfigurableERPipeline` runs estimation between blocking and scoring when enabled; learned parameters persisted to `_er_model_params` (versioned, timestamped, with the config hash) so runs are reproducible and the UI can display them. CLI: `arango-er estimate --config ...`. Learned parameters propagate to already-persisted similarity edges through 0.1's merge-upsert (scores update, verdict flags preserved) — without that change, EM would only affect edges created after estimation.
+- Flip default `scoring_method` to `fellegi_sunter` once this lands. **This is a scale change**: the LLM uncertain band (0.55–0.80) and any `ThresholdOptimizer` output were calibrated against the heuristic score, not the posterior. Ship a band-migration step with the flip — re-derive band edges on the posterior scale from accumulated verdicts where they exist, else map the configured edges through the score↔posterior curve. Flipping the default without this silently mis-routes pairs to/away from the LLM.
 
 **Acceptance:** on a synthetic dataset with known m/u, EM recovers parameters within tolerance; on Febrl/WDC test data, F1 with learned parameters ≥ F1 with hand-tuned defaults.
 
@@ -90,7 +111,7 @@ Extend [ab_evaluation_harness.py](../src/entity_resolution/services/ab_evaluatio
 
 - **Labeled evaluation:** given a ground-truth pair collection, compute precision/recall/F1 **across the full threshold sweep** (the curve, not one point) plus confusion counts at the configured threshold. This output is exactly what the Phase 2 threshold tuner renders.
 - **Unsupervised cluster metrics** (labels rarely exist in production): per-cluster density, intra-cluster mean/min edge score, bridge-edge detection (single low-score edge joining two dense subgraphs), size distribution. Builds directly on `_compute_cluster_quality` ([wcc_clustering_service.py:447](../src/entity_resolution/services/wcc_clustering_service.py#L447)).
-- **Benchmark runner:** `scripts/benchmarks/run_public_benchmarks.py` against WDC Products (hard splits) and OpenSanctions Pairs; results committed to `docs/benchmarks/` per release. This is also the marketing artifact.
+- **Benchmark runner:** `scripts/benchmarks/run_public_benchmarks.py`. Match benchmarks to the system's primary domain: Febrl-style synthetic person data and OpenSanctions Pairs (person/org) are the headline numbers; WDC Products (hard splits) as a secondary cross-domain check — it's e-commerce product matching, which exercises none of the person/address comparators or phonetics. Results committed to `docs/benchmarks/` per release. This is also the marketing artifact.
 - New API route `ui/routes/metrics.py`: `GET /api/metrics/threshold-sweep`, `GET /api/metrics/cluster-quality`.
 
 ### 1.3 Cluster repair (M)
@@ -136,7 +157,7 @@ On `ClusterDetailPage`/`ClusterGraph`:
 ### 2.3 Review workflow depth (M)
 
 - **Bulk actions:** filter-scoped "accept all LLM matches ≥ X confidence", "send band to LLM", CSV export of pending pairs. Backend batch endpoint applies 0.1 per pair.
-- **Attribution:** reviewer identity on each verdict (from auth token name or a session prompt), timestamps surfaced in UI; optional verdict-confidence capture in `VerdictPanel`.
+- **Attribution:** there is no user model today — auth is one shared optional bearer token and the frontend has no auth concept at all. Minimum viable attribution: named API tokens (a `token → reviewer name` map in server config) and/or a session reviewer-name prompt, stored on each verdict with timestamps surfaced in UI; optional verdict-confidence capture in `VerdictPanel`. Full multi-user auth is explicitly out of scope until a deployment story exists (Phase 4).
 - **Flow:** auto-advance to next unreviewed after verdict; `?` shortcut help modal; pagination preserved across filter changes.
 - **Golden records:** wire `ConflictResolver`/`MergeStrategySelector` to 0.3's survivorship parameters with preview → apply → audit.
 
@@ -163,7 +184,7 @@ The capabilities no competitor (open-source) has; sequenced after Phases 0–2 b
 ### 3.1 Relationship features in similarity scoring (L)
 
 New `GraphContextSimilarity` (`similarity/graph_context.py`):
-- Per candidate pair, compute graph evidence via AQL k-hop traversal: shared-neighbor count/Jaccard over configured edge collections (shared employer, address, device, phone), shortest-path existence ≤ k through non-similarity edges.
+- Graph evidence per candidate pair: shared-neighbor count/Jaccard over configured edge collections (shared employer, address, device, phone), shortest-path existence ≤ k through non-similarity edges. **Computed in batch, never per-pair**: one neighbor-set fetch per *record* in the candidate set (AQL traversal, hops capped at 2), cached per run, pair features joined in memory — naive per-pair traversals would be orders of magnitude slower than the ~100K pairs/sec attribute scorer.
 - Enters the FS model as additional comparison fields with their own EM-learned m/u — so graph evidence is calibrated, not bolted on.
 - Config: `similarity.graph_context: {edge_collections, max_hops, features}`.
 - **Explainability payoff:** `explain_match` (MCP + UI `ExplainMatchModal`) gains path evidence — "both linked to Acme Corp (employer) and 12 Main St (address)" — rendered as a mini-graph. This is the path-based explanation modality Splink structurally cannot offer.
@@ -188,11 +209,10 @@ Productize `Node2VecEmbeddingService` as a real blocking strategy: embeddings wr
 
 | Item | Size | Notes |
 |---|---|---|
-| CI gates: `--cov-fail-under=70`, mypy, flake8, bandit in GitHub Actions | S | Makefile targets exist; wire into workflow |
+| CI gates: `--cov-fail-under=70`, mypy, flake8, bandit in GitHub Actions | S | lint/typecheck Makefile targets exist; coverage and bandit targets must be added first, then wired into the workflow |
 | Integration-test CI job with dockerized ArangoDB | S | `scripts/run_tests_with_temp_arango.sh` already does this locally |
 | Dockerfile + published image for UI/MCP server; compose service entry | S–M | closes the "library-only" deployment gap |
 | Structured JSON logging option + Prometheus `/metrics` on the UI server (runs, durations, LLM cost, queue depth) | M | extend `utils/logging.py`; `prometheus-client` optional extra |
-| Schema versioning: `_er_meta` collection with schema version + idempotent migration runner | M | needed before 3.x→4.0 collection changes (audit log, model params, term frequencies) |
 | Scripts cull: keep CI/Makefile-referenced + benchmarks; archive the rest under `scripts/archive/` with a README | S | |
 | docs/archive consolidation; README badges; align requirements.txt with extras (or delete it) | S | |
 
@@ -201,10 +221,12 @@ Productize `Node2VecEmbeddingService` as a real blocking strategy: embeddings wr
 ## Dependency map and suggested order
 
 ```
-0.1 feedback loop ──┬─→ 2.2 cluster editing ──→ 3.2 collective ER
+0.1 feedback loop ──┬─→ 0.7 golden-record staleness, 2.2 cluster editing ──→ 3.2 collective ER
 0.2 honest scoring ─┼─→ 1.1 EM ──→ (default FS scoring) ──→ 3.1 graph features
-0.3 golden records ─┼─→ 2.3 review workflow (golden record apply)
+0.3 golden records ─┼─→ 0.7, 2.3 review workflow (golden record apply)
 0.5 LLM hardening ──┘
+0.1 merge-upsert ──→ 1.1 (learned params reach existing edges)
+1.0 schema versioning ──→ 1.1 (_er_model_params, _er_term_frequencies), 2.2 (_er_audit_log)
 1.2 evaluation ──→ 2.1 threshold tuner, 1.3 cluster repair ──→ 2.2 repair queue
 1.4 profiler ──→ 2.4 profiling screen
 0.1 + 1.1 ──→ 3.3 incremental maintenance
@@ -212,11 +234,12 @@ Productize `Node2VecEmbeddingService` as a real blocking strategy: embeddings wr
 Phase 4: parallel with everything
 ```
 
-Recommended execution: **Phase 0 as one milestone** (it's mostly S/M items and every later phase depends on it), then 1.1+1.2 together, then split effort between Phase 2 (UI) and remaining Phase 1, then Phase 3 as the v4.0 headline.
+Recommended execution: **Phase 0 as one milestone** (it's mostly S/M items and every later phase depends on it), then 1.0 (schema versioning) followed by 1.1+1.2 together, then split effort between Phase 2 (UI) and remaining Phase 1, then Phase 3 as the v4.0 headline.
 
 ## Risks
 
 - **EM on real-world skew (1.1):** EM can converge to degenerate solutions on highly imbalanced candidate sets. Mitigation: Splink-style per-field estimation passes, sane priors from the profiler, and the evaluation harness as a regression gate.
 - **Scoped re-clustering correctness (0.1):** component-local WCC must produce identical results to global re-runs. Mitigation: property-based test comparing scoped vs full re-cluster on random graphs.
+- **Graph-feature cost (3.1/3.2):** per-pair traversals don't scale, and 3.2 re-scores repeatedly. Mitigation: the batched per-record neighbor-set design in 3.1, hop cap of 2, neighbor-set caching across collective rounds, and a throughput benchmark on a relationship-rich dataset *before* committing 3.1/3.2 to the v4.0 headline.
 - **UI scope creep (Phase 2):** the tuner and cluster editing are each demo-defining; resist polishing past "works and is audited" until Phase 3 ships.
 - **Behavior changes for existing users (0.2, 1.1):** keep `weighted_heuristic` available and config-selectable through 4.0; document migration in `MIGRATION_GUIDE_V4.md`.

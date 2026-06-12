@@ -2,14 +2,14 @@
 
 **Scope:** Full review of the arango-entity-resolution project (v3.5.1): core ER pipeline, AI/ML capabilities, UI, engineering quality, and a gap analysis against the 2025–2026 state of the art (Splink, Zingg, Senzing, Quantexa, Tamr, AWS Entity Resolution, recent LLM-ER research).
 
-**Verdict in one paragraph:** This is a genuinely strong, well-engineered system — the blocking architecture, ArangoDB-native integration, MCP server, and configurability are competitive with or better than open-source peers. Its three biggest liabilities are: (1) the matching core is **rule-based with hardcoded weights** — there is no parameter learning (EM), no calibration, and no learned models, which is the defining capability gap vs Splink/Zingg; (2) the **feedback/review loop doesn't close** — human verdicts are stored but never change clusters, edges, or weights; (3) the **UI is functional but utilitarian** — it lacks the threshold-tuning-with-live-metrics, cluster editing (merge/split), and steward-workflow features that define best-in-class ER tools. The project's largest untapped advantage is the one thing competitors can't copy: it lives inside a graph database, yet it does not use graph context (relationships, collective resolution, same-engine analytics) as match evidence.
+**Verdict in one paragraph:** This is a genuinely strong, well-engineered system — the blocking architecture, ArangoDB-native integration, MCP server, and configurability are competitive with or better than open-source peers. Its three biggest liabilities are: (1) the matching core is **rule-based with hardcoded weights** — there is no parameter learning (EM), no calibration, and no learned models, which is the defining capability gap vs Splink/Zingg; (2) the **feedback/review loop doesn't close where it matters** — human verdicts can re-tune LLM routing thresholds, but never change edges or clusters; (3) the **UI is functional but utilitarian** — it lacks the threshold-tuning-with-live-metrics, cluster editing (merge/split), and steward-workflow features that define best-in-class ER tools. The project's largest untapped advantage is the one thing competitors can't copy: it lives inside a graph database, yet it does not use graph context (relationships, collective resolution, same-engine analytics) as match evidence.
 
 ---
 
 ## 1. Strengths
 
 ### Core pipeline
-- **Multi-strategy blocking orchestration** ([orchestrator.py](../src/entity_resolution/core/orchestrator.py)) is excellent: clean `BlockingStrategy` interface, union/intersection merge semantics, per-pair provenance (`sources`), consistent stats. Seven strategies (exact/COLLECT, BM25, vector/ANN, LSH, geographic, graph-traversal, shard-parallel) is broader coverage than Splink or Zingg offer.
+- **Multi-strategy blocking orchestration** ([orchestrator.py](../src/entity_resolution/core/orchestrator.py)) is excellent: clean `BlockingStrategy` interface, union/intersection merge semantics, per-pair provenance (`sources`), consistent stats. Eight strategies (exact/COLLECT, BM25, vector/ANN, LSH, geographic, graph-traversal, shard-parallel, hybrid) is broader coverage than Splink or Zingg offer.
 - **Batch similarity service** is well optimized: batched document fetches cut query counts from 100K+ to dozens ([batch_similarity_service.py:176-183](../src/entity_resolution/services/batch_similarity_service.py)); realistic ~100K pairs/sec throughput.
 - **Pluggable clustering backends** (union-find, DFS, scipy sparse, AQL graph, GAE) with auto-selection by edge count — a thoughtful scalability story.
 - **Config system** ([er_config.py](../src/entity_resolution/config/er_config.py)) is type-safe, validated, supports computed fields with AQL-injection guards, YAML/JSON.
@@ -39,14 +39,14 @@ These are concrete defects verified in the code, ordered by severity.
 The per-field log-likelihood ratios are correct, but:
 - An ad-hoc `importance` multiplier is applied to each field's LLR (lines 608–611), which has no Bayesian justification — true FS sums unweighted LLRs.
 - `m_prob`/`u_prob` are **hardcoded defaults** (0.8 / 0.05) per field. There is no EM estimation from data — the core feature that makes Splink work unsupervised.
-- The `confidence` value (lines 625–630) is an arbitrary linear scaling, not a posterior probability. Downstream consumers (LLM band routing, review queue ordering) treat it as if it were calibrated.
+- The `confidence` value (lines 625–630) is an arbitrary linear scaling, not a posterior probability, yet it is surfaced to the UI and review queue as if it were calibrated. (The LLM uncertain band routes on the raw similarity score — a second uncalibrated number — so neither routing input is a probability.)
 
 **Impact:** match decisions are heuristic similarity scores wearing a probabilistic label. On datasets with different match prevalence, thresholds won't transfer and accuracy claims can't be defended.
 
-### 2.2 The human/LLM feedback loop never closes
+### 2.2 The human/LLM feedback loop closes for thresholds only — never for edges or clusters
 [feedback.py](../src/entity_resolution/reasoning/feedback.py)
 
-Verdicts (LLM and human corrections) are persisted, queryable, and counted — and then **nothing happens**. A human marking a pair "not a match" does not remove the similarity edge, does not trigger re-clustering, and does not update weights or thresholds. The `ThresholdOptimizer` referenced by the active-learning path is a stub. The review UI therefore creates the *appearance* of human-in-the-loop ER without the substance — arguably the single most misleading gap in the product.
+Verdicts (LLM and human corrections) are persisted, queryable, and counted, and one consumer does exist: `ThresholdOptimizer` ([feedback.py:261](../src/entity_resolution/reasoning/feedback.py#L261)) is a real implementation — isotonic regression with a percentile fallback — that derives new LLM low/high thresholds from accumulated verdicts, exposed via `POST /api/review/{collection}/optimize` and auto-refreshed by `AdaptiveLLMVerifier`. But that is the loop's only closed arc, and it tunes *future LLM routing*, not existing results. A human marking a pair "not a match" does not suppress the similarity edge, does not trigger re-clustering, and changes nothing the user can see. The review UI therefore still creates the *appearance* of human-in-the-loop ER without the substance where it matters most: the resolved data itself.
 
 ### 2.3 Legacy `GoldenRecordService` is a skeleton still exported in the public API
 [golden_record_service.py:134](../src/entity_resolution/services/golden_record_service.py#L134) — `_retrieve_cluster_records` is `return []  # Placeholder`.
@@ -67,7 +67,7 @@ Extracted-entity link edges point from the matched entity to itself; the source 
 Clustering is pure WCC transitive closure. If A≈B and B≈C, then A–C are co-clustered even when A and C are clearly different entities. There is no intra-cluster coherence check, no cluster splitting, and no edge-confidence weighting at cluster time. This is the classic precision killer for WCC-based ER, and SOTA systems all mitigate it.
 
 ### 2.6 Smaller verified defects
-- **LLM JSON parse fallback silently fabricates a verdict** from the raw score when the LLM returns non-JSON ([llm_verifier.py:256-266](../src/entity_resolution/reasoning/llm_verifier.py)) — should retry or escalate, not guess. The markdown-fence stripping also crashes on an empty fenced block.
+- **LLM JSON parse fallback silently fabricates a verdict** from the raw score when the LLM returns non-JSON ([llm_verifier.py:256-266](../src/entity_resolution/reasoning/llm_verifier.py)) — should retry or escalate, not guess. (An empty fenced block doesn't crash fence-stripping, but it falls into the same fabrication path.)
 - **Tuple serializer field weights are inert**: `apply_weights` defaults to False and is never enabled anywhere, so configured embedding field weights do nothing ([tuple_embedding_serializer.py:239-246](../src/entity_resolution/services/tuple_embedding_serializer.py)).
 - **No LLM cost controls anywhere**: no token counting, budgets, or cost estimation. A 10M-record run with a wide uncertain band can rack up thousands of dollars invisibly.
 - **docker-compose.test.yml hardcodes a password** (line 9) instead of `${ARANGO_ROOT_PASSWORD:?}`.
@@ -82,7 +82,7 @@ Benchmarked against the 2025–2026 capability bar (Splink 4/5, Zingg 0.6 + Ente
 |---|-----------|-------------|--------------|
 | 1 | Unsupervised EM training of m/u + term-frequency adjustments | Splink | ❌ hardcoded weights |
 | 2 | Learned/verified blocking | Zingg blocking trees | ⚠️ many strategies, none learned; A/B harness exists but manual |
-| 3 | Active-learning labeling loop | Zingg, dedupe | ⚠️ feedback stored, loop never closes (§2.2) |
+| 3 | Active-learning labeling loop | Zingg, dedupe | ⚠️ verdicts re-tune LLM thresholds (isotonic); edges/clusters never change (§2.2) |
 | 4 | Threshold tuning vs live precision/recall | Splink charts | ❌ none |
 | 5 | Cluster QA without ground truth (graph metrics, coherence) | Splink `compute_graph_metrics` | ❌ none; no cluster repair (§2.5) |
 | 6 | Cluster visualization dashboard | Splink Cluster Studio, Linkurious | ⚠️ good per-cluster graph; no corpus-level QA view |
@@ -112,7 +112,7 @@ The UI is **architecturally healthy but product-thin**: a solid v0.x foundation 
 1. **It's read-only where it matters.** Clusters cannot be edited — no "remove this record from cluster," no "merge these two clusters," no outlier flagging. The ConflictResolver component renders but its callback is a stub ([GoldenRecordsPage.tsx](../ui/src/pages/GoldenRecordsPage.tsx)); merge preview has no apply/commit. For an ER product, cluster curation is the product.
 2. **No what-if threshold tuning.** Thresholds live in config; there is no slider with live "47 more matches / 12 likely false positives at 0.70" preview. This is Splink's most-loved feature and the highest-impact single addition.
 3. **Review queue lacks workflow depth**: no bulk actions ("accept all LLM-confident matches"), no audit trail (who/when), no reviewer assignment, no "jump to next unreviewed," confidence not captured on human verdicts.
-4. **Verdicts don't do anything** (backend gap §2.2 surfacing in UI) — users will review pairs and see no effect on clusters, which destroys trust in the tool.
+4. **Verdicts don't change the data** (backend gap §2.2 surfacing in UI) — users will review pairs and see no effect on edges or clusters, which destroys trust in the tool.
 
 ### Quality/polish gaps
 - **Zero frontend tests** (no unit, no E2E) and zero backend route tests for the UI API.
@@ -120,7 +120,7 @@ The UI is **architecturally healthy but product-thin**: a solid v0.x foundation 
 - **No dark mode, minimal responsiveness** (4 `sm:` breakpoints total; fixed sidebar; no mobile nav).
 - **Performance**: no virtualization on cluster/review tables; `PairComparison` fires one API call per visible pair (10 calls per page) instead of batch fetching.
 - **API contract drift**: components defensively handle `pairs|verdicts|items` and `record_a|doc_a` response shapes ([ReviewQueue.tsx:62-63](../ui/src/components/review/ReviewQueue.tsx)) — the generated OpenAPI schema exists but isn't the single source of truth.
-- **CORS is wide open** (`allow_methods=["*"]`, `allow_headers=["*"]`) and there's no rate limiting.
+- **API hardening is thin**: CORS origins default to same-origin (empty allowlist), but `allow_methods`/`allow_headers` are `*` for any configured origin; auth is a single optional shared bearer token with no user identity (and the frontend has no concept of it); no rate limiting.
 
 ### Missing screens a best-in-class ER UI would have
 - Data quality profiling (field completeness/distributions → blocking-field recommendations)
@@ -139,7 +139,7 @@ The UI is **architecturally healthy but product-thin**: a solid v0.x foundation 
 **Good:** modern packaging, 1:1 test ratio, secret hygiene, deprecation discipline, GitHub Actions unit-test CI.
 
 **Needs work:**
-- **CI gates are soft**: no coverage threshold, no mypy, no lint, no bandit in CI (all configured in Makefile but not enforced). Coverage claims (67%) are point-in-time, not protected.
+- **CI gates are soft**: no coverage threshold, no mypy, no lint, no bandit in CI (lint and mypy exist as Makefile targets but aren't wired in; coverage and bandit targets don't exist at all). Coverage claims (67%) are point-in-time, not protected.
 - **No deployment story for the service itself**: docker-compose deploys only ArangoDB; there is no Dockerfile for the FastAPI UI / MCP server, no K8s manifests.
 - **No observability**: stdout logging only — no JSON logs, no Prometheus metrics, no OpenTelemetry.
 - **No schema/migration versioning** for the ArangoDB collections the system creates.
