@@ -29,13 +29,20 @@ fi
 # Set Python path
 export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
 
+# Prefer the project virtualenv (has dependencies); fall back to system python3
+if [ -x ".venv/bin/python" ]; then
+    PYTHON=".venv/bin/python"
+else
+    PYTHON="python3"
+fi
+
 # Run quick smoke tests
 echo "[1/4] Checking Python syntax..."
-python3 -m py_compile src/entity_resolution/utils/config.py || {
+"$PYTHON" -m py_compile src/entity_resolution/utils/config.py || {
     echo -e "${RED}[FAIL] Syntax error in config.py${NC}"
     exit 1
 }
-python3 -m py_compile src/entity_resolution/utils/constants.py || {
+"$PYTHON" -m py_compile src/entity_resolution/utils/constants.py || {
     echo -e "${RED}[FAIL] Syntax error in constants.py${NC}"
     exit 1
 }
@@ -56,8 +63,25 @@ echo -e "${GREEN}[OK] No hardcoded credentials found${NC}"
 
 echo ""
 echo "[3/4] Checking for emoji characters..."
-# Check Python files only (not JSON data)
-if grep -r "[\x{2713}\x{2714}\x{2715}\x{274C}\x{26A0}\x{1F389}\x{1F44D}]" src/ demo/*.py demo/scripts/*.py 2>/dev/null | grep -v "Binary"; then
+# Check Python source files only (portable: BSD grep does not support \x{...} classes)
+if "$PYTHON" - << 'EMOJICHECK'
+import pathlib, sys
+emoji = {"✓", "✔", "✕", "❌", "⚠", "\U0001F389", "\U0001F44D"}
+hits = []
+for path in pathlib.Path("src").rglob("*.py"):
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        continue
+    if any(ch in text for ch in emoji):
+        hits.append(str(path))
+if hits:
+    print("\n".join(hits))
+    sys.exit(1)
+EMOJICHECK
+then
+    : # clean
+else
     echo -e "${YELLOW}[WARNING] Found emoji characters (should use ASCII only)${NC}"
     echo "Consider replacing emojis with [OK], [ERROR], [WARNING] indicators"
     # Don't fail, just warn
@@ -66,7 +90,7 @@ echo -e "${GREEN}[OK] Code style check passed${NC}"
 
 echo ""
 echo "[4/4] Running critical module imports..."
-python3 << 'PYTEST'
+"$PYTHON" << 'PYTEST'
 import sys
 import os
 

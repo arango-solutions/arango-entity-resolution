@@ -32,6 +32,13 @@ fi
 # Set Python path
 export PYTHONPATH="${PWD}/src:${PYTHONPATH:-}"
 
+# Prefer the project virtualenv (has dependencies); fall back to system python3
+if [ -x ".venv/bin/python" ]; then
+    PYTHON=".venv/bin/python"
+else
+    PYTHON="python3"
+fi
+
 # Check if we should skip tests (for emergency pushes)
 if [ -n "${SKIP_TESTS:-}" ]; then
     echo -e "${YELLOW}[WARNING] Skipping tests (SKIP_TESTS environment variable set)${NC}"
@@ -67,13 +74,13 @@ if command -v docker >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
     fi
 else
     echo -e "${YELLOW}[WARNING] docker and/or curl not found; running unit tests only${NC}"
-    if ! run_test_section "Unit Tests (no Docker)" "python3 -m pytest -q -m \"not integration and not performance\" 2>&1 | tail -50"; then
+    if ! run_test_section "Unit Tests (no Docker)" "\"$PYTHON\" -m pytest -q -m \"not integration and not performance\" 2>&1 | tail -50"; then
         FAILED_TESTS+=("Unit Tests (no Docker)")
     fi
 fi
 
 # Test 4: Import Verification
-if ! run_test_section "Module Imports" "python3 << 'PYTEST'
+if ! run_test_section "Module Imports" "\"$PYTHON\" << 'PYTEST'
 import sys
 import warnings
 warnings.filterwarnings('ignore')
@@ -116,7 +123,7 @@ PYTEST"; then
 fi
 
 # Test 5: Code Quality (Quick Check)
-if ! run_test_section "Code Quality" "python3 -m py_compile src/entity_resolution/utils/config.py src/entity_resolution/utils/constants.py src/entity_resolution/core/entity_resolver.py 2>&1 | head -10"; then
+if ! run_test_section "Code Quality" "\"$PYTHON\" -m py_compile src/entity_resolution/utils/config.py src/entity_resolution/utils/constants.py src/entity_resolution/core/entity_resolver.py 2>&1 | head -10"; then
     FAILED_TESTS+=("Code Quality")
 fi
 
