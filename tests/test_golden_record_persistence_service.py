@@ -114,3 +114,135 @@ def test_idempotent_rerun_does_not_create_more_goldens_or_edges(db):
     assert len(db.collection("GoldenRecord").docs) == 1
     assert len(db.collection("resolvedTo").docs) == 2
 
+
+
+@pytest.fixture
+def survivorship_db(db):
+    """Three-member cluster with conflicting field values for strategy tests."""
+    people = db.collection("Person")
+    people.docs_by_key["s1"] = {
+        "_key": "s1", "_id": "Person/s1",
+        "name": "Bob", "email": "bob@a.com",
+        "updated_at": "2024-01-01T00:00:00Z", "source": "crm",
+    }
+    people.docs_by_key["s2"] = {
+        "_key": "s2", "_id": "Person/s2",
+        "name": "Robert Smith", "email": "bob@b.com",
+        "updated_at": "2026-03-01T00:00:00Z", "source": "web_signup",
+    }
+    people.docs_by_key["s3"] = {
+        "_key": "s3", "_id": "Person/s3",
+        "name": "Bob", "email": "bob@c.com",
+        "updated_at": "2025-06-01T00:00:00Z", "source": "import",
+    }
+    db.collection("person_clusters").docs.append(
+        {"_key": "cluster_000003", "cluster_id": 3,
+         "members": ["Person/s1", "Person/s2", "Person/s3"],
+         "member_keys": ["s1", "s2", "s3"]}
+    )
+    return db
+
+
+def _run(svc_db, **kwargs):
+    svc = GoldenRecordPersistenceService(
+        db=svc_db,
+        source_collection="Person",
+        cluster_collection="person_clusters",
+        golden_collection="GoldenRecord",
+        resolved_edge_collection="resolvedTo",
+        **kwargs,
+    )
+    svc.run(run_id="run-strategy", min_cluster_size=3)
+    return next(g for g in svc_db.collection("GoldenRecord").docs if g["clusterSize"] == 3)
+
+
+def test_field_voting_default_picks_most_frequent(survivorship_db):
+    gr = _run(survivorship_db, include_fields=["name"])
+    assert gr["name"] == "Bob"
+    assert gr["mergeStrategy"] == "field_voting"
+
+
+def test_most_complete_picks_longest_value(survivorship_db):
+    gr = _run(survivorship_db, include_fields=["name"], merge_strategy="most_complete")
+    assert gr["name"] == "Robert Smith"
+
+
+def test_most_recent_picks_value_from_latest_doc(survivorship_db):
+    gr = _run(
+        survivorship_db,
+        include_fields=["name", "email"],
+        merge_strategy="most_recent",
+        recency_field="updated_at",
+    )
+    assert gr["name"] == "Robert Smith"
+    assert gr["email"] == "bob@b.com"
+
+
+def test_source_priority_picks_value_from_ranked_source(survivorship_db):
+    gr = _run(
+        survivorship_db,
+        include_fields=["email"],
+        merge_strategy="source_priority",
+        source_field="source",
+        source_priority=["import", "crm", "web_signup"],
+    )
+    assert gr["email"] == "bob@c.com"
+
+
+def test_per_field_strategy_overrides(survivorship_db):
+    gr = _run(
+        survivorship_db,
+        include_fields=["name", "email"],
+        merge_strategy="field_voting",
+        field_strategies={"email": "most_recent"},
+        recency_field="updated_at",
+    )
+    assert gr["name"] == "Bob"
+    assert gr["email"] == "bob@b.com"
+
+
+def test_provenance_records_strategy(survivorship_db):
+    svc = GoldenRecordPersistenceService(
+        db=survivorship_db,
+        source_collection="Person",
+        cluster_collection="person_clusters",
+        golden_collection="GoldenRecord",
+        resolved_edge_collection="resolvedTo",
+        include_fields=["name"],
+        include_provenance=True,
+        merge_strategy="most_complete",
+    )
+    svc.run(run_id="run-prov", min_cluster_size=3)
+    gr = next(g for g in survivorship_db.collection("GoldenRecord").docs if g["clusterSize"] == 3)
+    assert gr["fieldProvenance"]["name"]["strategy"] == "most_complete"
+    assert gr["fieldProvenance"]["name"]["chosenFrom"] == "Person/s2"
+
+
+def test_unknown_strategy_rejected(survivorship_db):
+    with pytest.raises(ValueError, match="Unknown merge strategy"):
+        GoldenRecordPersistenceService(
+            db=survivorship_db,
+            source_collection="Person",
+            cluster_collection="person_clusters",
+            merge_strategy="newest",
+        )
+
+
+def test_most_recent_requires_recency_field(survivorship_db):
+    with pytest.raises(ValueError, match="recency_field"):
+        GoldenRecordPersistenceService(
+            db=survivorship_db,
+            source_collection="Person",
+            cluster_collection="person_clusters",
+            merge_strategy="most_recent",
+        )
+
+
+def test_source_priority_requires_source_config(survivorship_db):
+    with pytest.raises(ValueError, match="source_field"):
+        GoldenRecordPersistenceService(
+            db=survivorship_db,
+            source_collection="Person",
+            cluster_collection="person_clusters",
+            field_strategies={"email": "source_priority"},
+        )

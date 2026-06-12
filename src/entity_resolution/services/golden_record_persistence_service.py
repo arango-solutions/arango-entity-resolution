@@ -22,6 +22,8 @@ from ..utils.graph_utils import extract_key_from_vertex_id, format_vertex_id
 
 SYSTEM_FIELDS = {"_key", "_id", "_rev", "_from", "_to"}
 
+MERGE_STRATEGIES = ("field_voting", "most_complete", "most_recent", "source_priority")
+
 
 class GoldenRecordPersistenceService:
     """
@@ -34,6 +36,14 @@ class GoldenRecordPersistenceService:
     Outputs:
     - `golden_collection`: golden record vertices (default "golden_records")
     - `resolved_edge_collection`: edges from source -> golden (default "resolvedTo")
+
+    Survivorship: `merge_strategy` selects how conflicting field values are
+    resolved, with optional per-field overrides via `field_strategies`:
+    - "field_voting" (default): most frequent value, tie-break longest string
+    - "most_complete": longest / most informative value
+    - "most_recent": value from the member doc with the latest `recency_field`
+    - "source_priority": value from the doc whose `source_field` value ranks
+      earliest in `source_priority`
     """
 
     def __init__(
@@ -45,6 +55,11 @@ class GoldenRecordPersistenceService:
         resolved_edge_collection: str = "resolvedTo",
         include_fields: Optional[Sequence[str]] = None,
         include_provenance: bool = False,
+        merge_strategy: str = "field_voting",
+        field_strategies: Optional[Dict[str, str]] = None,
+        recency_field: Optional[str] = None,
+        source_field: Optional[str] = None,
+        source_priority: Optional[Sequence[str]] = None,
     ):
         self.db = db
         self.source_collection_name = source_collection
@@ -53,6 +68,28 @@ class GoldenRecordPersistenceService:
         self.resolved_edge_collection_name = resolved_edge_collection
         self.include_fields = list(include_fields) if include_fields else None
         self.include_provenance = include_provenance
+
+        self.merge_strategy = merge_strategy
+        self.field_strategies = dict(field_strategies) if field_strategies else {}
+        self.recency_field = recency_field
+        self.source_field = source_field
+        self.source_priority = list(source_priority) if source_priority else []
+
+        used_strategies = {self.merge_strategy, *self.field_strategies.values()}
+        unknown = used_strategies - set(MERGE_STRATEGIES)
+        if unknown:
+            raise ValueError(
+                f"Unknown merge strategy {sorted(unknown)}; "
+                f"valid strategies: {', '.join(MERGE_STRATEGIES)}"
+            )
+        if "most_recent" in used_strategies and not self.recency_field:
+            raise ValueError("merge_strategy 'most_recent' requires recency_field")
+        if "source_priority" in used_strategies and not (
+            self.source_field and self.source_priority
+        ):
+            raise ValueError(
+                "merge_strategy 'source_priority' requires source_field and source_priority"
+            )
 
         if not self.db.has_collection(self.golden_collection_name):
             self.db.create_collection(self.golden_collection_name, edge=False)
@@ -108,6 +145,7 @@ class GoldenRecordPersistenceService:
                 "runId": rid,
                 "updatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "method": method,
+                "mergeStrategy": self.merge_strategy,
                 **consolidated,
             }
             if self.include_provenance:
@@ -191,10 +229,8 @@ class GoldenRecordPersistenceService:
 
     def _consolidate(self, member_docs: Sequence[Dict[str, Any]]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
-        Generic consolidation with optional provenance.
-
-        - strings: most frequent, tie-break by longest
-        - everything else: most frequent (by repr)
+        Per-field consolidation using the configured survivorship strategy
+        (with per-field overrides), with optional provenance.
         """
         all_fields = set()
         for d in member_docs:
@@ -209,38 +245,73 @@ class GoldenRecordPersistenceService:
         provenance: Dict[str, Any] = {}
 
         for field in fields:
-            vals: List[Tuple[Any, str]] = []
+            # (value, source_id, owning_doc) for every doc that has the field
+            vals: List[Tuple[Any, str, Dict[str, Any]]] = []
             for d in member_docs:
                 v = d.get(field)
                 if v is None:
                     continue
                 if isinstance(v, str) and not v.strip():
                     continue
-                vals.append((v, d.get("_id") or d.get("_key") or "unknown"))
+                vals.append((v, d.get("_id") or d.get("_key") or "unknown", d))
 
             if not vals:
                 continue
 
-            counts: Dict[str, int] = {}
-            for v, _ in vals:
-                counts[repr(v)] = counts.get(repr(v), 0) + 1
-            max_count = max(counts.values())
-            top = [v for v, _ in vals if counts.get(repr(v), 0) == max_count]
-
-            chosen = top[0]
-            if isinstance(chosen, str) and len(top) > 1:
-                chosen = max(top, key=lambda x: len(x))
-
+            strategy = self.field_strategies.get(field, self.merge_strategy)
+            chosen, chosen_from = self._apply_strategy(strategy, vals)
             consolidated[field] = chosen
 
             if self.include_provenance:
-                distinct = len(set(repr(v) for v, _ in vals))
-                chosen_from = next((src for v, src in vals if v == chosen), None)
+                distinct = len(set(repr(v) for v, _, _ in vals))
                 provenance[field] = {
                     "distinctValues": distinct,
-                    "sources": len({src for _, src in vals}),
+                    "sources": len({src for _, src, _ in vals}),
                     "chosenFrom": chosen_from,
+                    "strategy": strategy,
                 }
 
         return consolidated, provenance
+
+    def _apply_strategy(
+        self, strategy: str, vals: List[Tuple[Any, str, Dict[str, Any]]]
+    ) -> Tuple[Any, str]:
+        """Resolve one field's conflicting values; returns (value, source_id)."""
+        if strategy == "most_complete":
+            v, src, _ = max(vals, key=lambda t: len(str(t[0])))
+            return v, src
+
+        if strategy == "most_recent":
+            with_ts = [t for t in vals if t[2].get(self.recency_field) is not None]
+            if with_ts:
+                # ISO-8601 strings and numeric epochs both order correctly via str()
+                v, src, _ = max(with_ts, key=lambda t: str(t[2][self.recency_field]))
+                return v, src
+            return self._field_voting(vals)
+
+        if strategy == "source_priority":
+            rank = {s: i for i, s in enumerate(self.source_priority)}
+            ranked = [t for t in vals if t[2].get(self.source_field) in rank]
+            if ranked:
+                v, src, _ = min(ranked, key=lambda t: rank[t[2][self.source_field]])
+                return v, src
+            return self._field_voting(vals)
+
+        return self._field_voting(vals)
+
+    @staticmethod
+    def _field_voting(vals: List[Tuple[Any, str, Dict[str, Any]]]) -> Tuple[Any, str]:
+        """Most frequent value (by repr), tie-break by longest string."""
+        counts: Dict[str, int] = {}
+        for v, _, _ in vals:
+            counts[repr(v)] = counts.get(repr(v), 0) + 1
+        max_count = max(counts.values())
+        top = [v for v, _, _ in vals if counts.get(repr(v), 0) == max_count]
+
+        chosen = top[0]
+        if isinstance(chosen, str) and len(top) > 1:
+            chosen = max(top, key=lambda x: len(x))
+
+        chosen_from = next((src for v, src, _ in vals if v == chosen), "unknown")
+        return chosen, chosen_from
 

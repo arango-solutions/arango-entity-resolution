@@ -205,9 +205,10 @@ class QATestSuite:
             from entity_resolution.services.clustering_service import ClusteringService
             clustering_service = ClusteringService(self.config)
             
-            # Test golden record service
-            from entity_resolution.services.golden_record_service import GoldenRecordService
-            golden_service = GoldenRecordService(self.config)
+            # Test golden record persistence service (import only; needs a db handle)
+            from entity_resolution.services.golden_record_persistence_service import (  # noqa: F401
+                GoldenRecordPersistenceService,
+            )
             
             duration = time.time() - start_time
             self.log_test("Services Connectivity", True, "All services initialized successfully", duration)

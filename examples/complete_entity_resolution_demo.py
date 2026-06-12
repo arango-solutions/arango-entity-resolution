@@ -30,10 +30,10 @@ from typing import Dict, List, Any
 # Requires: pip install arango-entity-resolution
 from entity_resolution import (
     DataManager,
-    BlockingService, 
+    BlockingService,
     SimilarityService,
     ClusteringService,
-    GoldenRecordService,
+    GoldenRecordPersistenceService,
     Config
 )
 from entity_resolution.utils.logging import setup_logging, get_logger
@@ -55,8 +55,9 @@ class CompleteEntityResolutionPipeline:
         self.blocking_service = BlockingService(config)
         self.similarity_service = SimilarityService(config)
         self.clustering_service = ClusteringService(config)
-        self.golden_record_service = GoldenRecordService(config)
-        
+        # Golden records: GoldenRecordPersistenceService is constructed in
+        # _run_golden_record_stage once a db connection exists.
+
         # Pipeline state
         self.connected = False
         self.pipeline_stats = {}
@@ -389,46 +390,58 @@ class CompleteEntityResolutionPipeline:
             self.logger.error(f"Clustering stage failed: {e}")
             return {"success": False, "error": str(e)}
     
-    def _run_golden_record_stage(self, clusters: List[Dict[str, Any]], 
+    def _run_golden_record_stage(self, clusters: List[Dict[str, Any]],
                                 collection_name: str) -> Dict[str, Any]:
-        """Run golden record generation stage"""
+        """Persist golden records from clusters via GoldenRecordPersistenceService."""
         try:
             start_time = time.time()
-            
-            # Generate golden records
-            golden_result = self.golden_record_service.generate_golden_records(
-                clusters=clusters,
-                source_collection=collection_name
-            )
-            
-            processing_time = time.time() - start_time
-            
-            if golden_result.get("success", False):
-                golden_records = golden_result["golden_records"]
-                
-                # Calculate additional statistics
-                quality_scores = [gr.get('data_quality_score', 0) for gr in golden_records]
-                confidence_scores = [gr.get('confidence_score', 0) for gr in golden_records]
-                
-                enhanced_statistics = {
-                    **golden_result.get("statistics", {}),
-                    "average_quality_score": sum(quality_scores) / len(quality_scores) if quality_scores else 0,
-                    "average_confidence_score": sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0,
-                    "high_quality_records": sum(1 for q in quality_scores if q >= 0.8),
-                    "processing_time": processing_time
-                }
-                
-                return {
-                    "success": True,
-                    "stage": "golden_records",
-                    "golden_records": golden_records,
-                    "record_count": len(golden_records),
-                    "statistics": enhanced_statistics,
-                    "processing_time": processing_time
-                }
+            db = self.data_manager.db
+
+            # The persistence service reads clusters from a collection, so
+            # write the in-memory clusters out first.
+            cluster_collection = f"{collection_name}_demo_clusters"
+            if db.has_collection(cluster_collection):
+                db.collection(cluster_collection).truncate()
             else:
-                return {"success": False, "error": golden_result.get("error", "Golden record generation failed")}
-            
+                db.create_collection(cluster_collection)
+
+            cluster_docs = []
+            for i, cluster in enumerate(clusters):
+                members = cluster.get("member_ids") or cluster.get("members") or []
+                cluster_docs.append({
+                    "_key": f"cluster_{i:06d}",
+                    "cluster_id": cluster.get("cluster_id", i),
+                    "members": list(members),
+                })
+            if cluster_docs:
+                db.collection(cluster_collection).insert_many(cluster_docs)
+
+            golden_collection = f"{collection_name}_golden_records"
+            service = GoldenRecordPersistenceService(
+                db=db,
+                source_collection=collection_name,
+                cluster_collection=cluster_collection,
+                golden_collection=golden_collection,
+                include_provenance=True,
+            )
+            run_summary = service.run(min_cluster_size=2)
+            processing_time = time.time() - start_time
+
+            golden_records = [doc for doc in db.collection(golden_collection)]
+
+            return {
+                "success": True,
+                "stage": "golden_records",
+                "golden_records": golden_records,
+                "record_count": len(golden_records),
+                "golden_collection": golden_collection,
+                "statistics": {
+                    **run_summary,
+                    "processing_time": processing_time,
+                },
+                "processing_time": processing_time
+            }
+
         except Exception as e:
             self.logger.error(f"Golden record stage failed: {e}")
             return {"success": False, "error": str(e)}
@@ -784,9 +797,9 @@ def save_pipeline_report(result: Dict[str, Any]):
             "pipeline_version": "1.0.0",
             "components": [
                 "BlockingService",
-                "SimilarityService", 
+                "SimilarityService",
                 "ClusteringService",
-                "GoldenRecordService"
+                "GoldenRecordPersistenceService"
             ]
         }
     }

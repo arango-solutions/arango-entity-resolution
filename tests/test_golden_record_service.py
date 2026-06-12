@@ -505,49 +505,26 @@ class TestConsolidateClusterRecords:
 
 
 class TestGenerateGoldenRecords:
-    """Test end-to-end golden record generation."""
-    
-    def test_generate_empty_clusters(self):
-        """Test generation with no clusters."""
+    """The end-to-end path is non-functional and must fail loudly."""
+
+    def test_generate_raises_not_implemented(self):
         service = GoldenRecordService()
-        
-        result = service.generate_golden_records([], source_collection='test')
-        
-        assert result['success'] is True
-        assert result['golden_records'] == []
-        assert result['summary']['input_clusters'] == 0
-        assert result['summary']['output_golden_records'] == 0
-    
-    def test_generate_cluster_without_records(self):
-        """Test generation when cluster has no retrievable records."""
+
+        with pytest.raises(NotImplementedError, match="GoldenRecordPersistenceService"):
+            service.generate_golden_records([], source_collection='test')
+
+    def test_generate_raises_before_processing_clusters(self):
         service = GoldenRecordService()
-        
         clusters = [
             {'cluster_id': 'c1', 'member_ids': ['m1', 'm2']}
         ]
-        
-        result = service.generate_golden_records(clusters, source_collection='test')
-        
-        # Should succeed but create no golden records (placeholder retrieval returns [])
-        assert result['success'] is True
-        assert len(result['golden_records']) == 0
-    
-    def test_generate_statistics_tracking(self):
-        """Test generation tracks statistics correctly."""
-        service = GoldenRecordService()
-        
-        clusters = [
-            {'cluster_id': 'c1', 'member_ids': ['m1']},
-            {'cluster_id': 'c2', 'member_ids': ['m2']}
-        ]
-        
-        result = service.generate_golden_records(clusters, source_collection='test')
-        
-        assert result['success'] is True
-        assert 'statistics' in result
-        assert 'clusters_processed' in result['statistics']
-        assert 'golden_records_created' in result['statistics']
-        assert 'summary' in result
+
+        with pytest.raises(NotImplementedError):
+            service.generate_golden_records(clusters, source_collection='test')
+
+    def test_constructor_emits_deprecation_warning(self):
+        with pytest.warns(DeprecationWarning, match="GoldenRecordPersistenceService"):
+            GoldenRecordService()
 
 
 class TestDataQualityScore:

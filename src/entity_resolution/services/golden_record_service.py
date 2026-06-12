@@ -1,14 +1,18 @@
 """
-Golden Record Service for Entity Resolution
+DEPRECATED: Golden Record Service for Entity Resolution
 
-Handles the generation of golden records (master records) from entity clusters:
-- Consolidates information from multiple records
-- Applies data quality rules and conflict resolution
-- Generates confidence scores for consolidated fields
-- Maintains provenance and audit trails
+This class was never wired to the database: record retrieval is a placeholder,
+so ``generate_golden_records`` always produced empty results. It now raises
+instead of silently returning garbage.
+
+Use :class:`entity_resolution.services.golden_record_persistence_service.GoldenRecordPersistenceService`
+instead — it persists golden records from cluster collections and supports
+per-field survivorship strategies (field_voting, most_complete, most_recent,
+source_priority).
 """
 
 import json
+import warnings
 from typing import Dict, List, Any, Optional, Tuple
 from collections import Counter
 from datetime import datetime
@@ -19,16 +23,21 @@ from ..utils.logging import get_logger
 
 class GoldenRecordService:
     """
-    Golden record generation service
-    
-    Creates master records by consolidating information from entity clusters:
-    - Field-level conflict resolution
-    - Data quality scoring
-    - Source prioritization
-    - Confidence calculation
+    DEPRECATED golden record generation service.
+
+    The end-to-end path (``generate_golden_records``) raises
+    NotImplementedError because record retrieval was never implemented.
+    Use ``GoldenRecordPersistenceService`` instead. The field-level
+    quality/validation helpers remain functional.
     """
-    
+
     def __init__(self, config: Optional[Config] = None):
+        warnings.warn(
+            "GoldenRecordService is deprecated and its end-to-end path is "
+            "non-functional; use GoldenRecordPersistenceService instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.config = config or get_config()
         self.logger = get_logger(__name__)
         
@@ -66,73 +75,18 @@ class GoldenRecordService:
             
         Returns:
             Golden record generation results
+
+        Raises:
+            NotImplementedError: always — record retrieval was never
+                implemented, so this path can only produce empty results.
         """
-        try:
-            source_collection = source_collection or self.config.er.default_source_collection
-            self.logger.info(f"Generating golden records for {len(clusters)} clusters")
-            
-            golden_records = []
-            generation_stats = {
-                'clusters_processed': 0,
-                'golden_records_created': 0,
-                'field_conflicts_resolved': 0,
-                'data_quality_issues': 0,
-                'processing_errors': 0
-            }
-            
-            for i, cluster in enumerate(clusters):
-                try:
-                    # Retrieve source records for cluster members
-                    source_records = self._retrieve_cluster_records(
-                        cluster['member_ids'], source_collection)
-                    
-                    if not source_records:
-                        self.logger.warning(f"No source records found for cluster {cluster.get('cluster_id')}")
-                        continue
-                    
-                    # Generate golden record for this cluster
-                    golden_record = self._consolidate_cluster_records(
-                        cluster, source_records, generation_stats)
-                    
-                    if golden_record:
-                        golden_records.append(golden_record)
-                        generation_stats['golden_records_created'] += 1
-                    
-                    generation_stats['clusters_processed'] += 1
-                    
-                    if (i + 1) % 10 == 0:
-                        self.logger.info(f"Processed {i + 1}/{len(clusters)} clusters")
-                        
-                except Exception as e:
-                    self.logger.error(f"Error processing cluster {i}: {e}")
-                    generation_stats['processing_errors'] += 1
-                    continue
-            
-            self.logger.info(f"Golden record generation completed: {len(golden_records)} records created")
-            
-            return {
-                'success': True,
-                'golden_records': golden_records,
-                'statistics': generation_stats,
-                'summary': {
-                    'input_clusters': len(clusters),
-                    'output_golden_records': len(golden_records),
-                    'success_rate': generation_stats['golden_records_created'] / len(clusters) if clusters else 0,
-                    'average_conflicts_per_record': generation_stats['field_conflicts_resolved'] / max(generation_stats['golden_records_created'], 1)
-                }
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Golden record generation failed: {e}")
-            return {'success': False, 'error': str(e)}
-    
-    def _retrieve_cluster_records(self, member_ids: List[str], collection: str) -> List[Dict[str, Any]]:
-        """Retrieve source records for cluster members"""
-        # This would typically use the data manager to retrieve records
-        # For now, return empty list as placeholder
-        self.logger.debug(f"Retrieving {len(member_ids)} records from {collection}")
-        return []  # Placeholder - would implement with actual database retrieval
-    
+        raise NotImplementedError(
+            "GoldenRecordService.generate_golden_records is non-functional: "
+            "record retrieval was never implemented, so it silently produced "
+            "empty golden records. Use GoldenRecordPersistenceService instead "
+            "(supports per-field survivorship via merge_strategy)."
+        )
+
     def _consolidate_cluster_records(self, cluster: Dict[str, Any], 
                                    source_records: List[Dict[str, Any]],
                                    stats: Dict[str, Any]) -> Optional[Dict[str, Any]]:
