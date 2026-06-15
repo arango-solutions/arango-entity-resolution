@@ -36,12 +36,16 @@ These are concrete defects verified in the code, ordered by severity.
 ### 2.1 The "Fellegi-Sunter" scorer is not actually probabilistic
 [similarity_service.py:571-652](../src/entity_resolution/services/similarity_service.py#L571-L652)
 
+**Scope correction (verified in code):** this dishonest scorer lives **only in the deprecated legacy `SimilarityService`** (used by the legacy `EntityResolver`). The **active** path — `ConfigurableERPipeline` → `BatchSimilarityService` → `WeightedFieldSimilarity` — returns an honestly-named weighted similarity in [0,1] and makes no probabilistic claim. So this is a trust defect in code slated for v3.0 removal, not in the production scoring path. It is still worth fixing because the legacy path is exported and the scorer is the template the project calls "Fellegi-Sunter."
+
 The per-field log-likelihood ratios are correct, but:
 - An ad-hoc `importance` multiplier is applied to each field's LLR (lines 608–611), which has no Bayesian justification — true FS sums unweighted LLRs.
 - `m_prob`/`u_prob` are **hardcoded defaults** (0.8 / 0.05) per field. There is no EM estimation from data — the core feature that makes Splink work unsupervised.
-- The `confidence` value (lines 625–630) is an arbitrary linear scaling, not a posterior probability, yet it is surfaced to the UI and review queue as if it were calibrated. (The LLM uncertain band routes on the raw similarity score — a second uncalibrated number — so neither routing input is a probability.)
+- The `confidence` value (lines 625–630) is an arbitrary linear scaling, not a posterior probability, yet it is surfaced as if it were calibrated.
 
-**Impact:** match decisions are heuristic similarity scores wearing a probabilistic label. On datasets with different match prevalence, thresholds won't transfer and accuracy claims can't be defended.
+**Impact:** on the legacy path, match decisions are heuristic similarity scores wearing a probabilistic label. On datasets with different match prevalence, thresholds won't transfer and accuracy claims can't be defended.
+
+**Status:** fixed in Phase 0.2 — the scorer is now split into `weighted_heuristic` (default, unchanged behavior, `confidence_is_calibrated=False`) and a true `fellegi_sunter` mode (pure LLR sum + calibrated posterior). EM-estimated `m`/`u` (Phase 1) remains the substantive remaining gap.
 
 ### 2.2 The human/LLM feedback loop closes for thresholds only — never for edges or clusters
 [feedback.py](../src/entity_resolution/reasoning/feedback.py)
