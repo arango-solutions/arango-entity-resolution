@@ -436,7 +436,9 @@ class AdaptiveLLMVerifier:
         self._maybe_refresh_thresholds()
         result = self.verifier.verify(record_a, record_b, score, field_scores)
 
-        if result.get("llm_called"):
+        # Only persist decisive labels; "error"/"pending_review" outcomes are
+        # not training data and must not reach the ThresholdOptimizer.
+        if result.get("llm_called") and result.get("decision") in ("match", "no_match"):
             self.store.save(
                 record_a, record_b,
                 score=score,

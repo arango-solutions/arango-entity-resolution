@@ -126,3 +126,81 @@ class TestLLMMatchVerifier:
         assert results[0]["llm_called"] is False
         assert results[1]["llm_called"] is True
         assert results[2]["llm_called"] is False
+
+
+class TestLLMHardening:
+    def _verifier(self, **kwargs):
+        from entity_resolution.reasoning.llm_verifier import LLMMatchVerifier
+        return LLMMatchVerifier(model="test/model", api_key="test-key", **kwargs)
+
+    def _resp(self, content):
+        r = MagicMock()
+        r.choices[0].message.content = content
+        return r
+
+    @patch("entity_resolution.reasoning.llm_verifier.litellm")
+    def test_parse_failure_retries_then_routes_to_review(self, mock_litellm):
+        mock_litellm.completion.return_value = self._resp("not json at all")
+        v = self._verifier()
+        result = v.verify(RECORD_A, RECORD_B, score=0.70)
+        assert result["decision"] == "error"
+        assert result["needs_review"] is True
+        # never fabricates match/no_match from the raw score
+        assert v.stats()["parse_failures"] == 1
+        assert mock_litellm.completion.call_count == 2  # initial + one retry
+
+    @patch("entity_resolution.reasoning.llm_verifier.litellm")
+    def test_parse_failure_recovers_on_retry(self, mock_litellm):
+        good = json.dumps({"decision": "match", "confidence": 0.9, "reasoning": "ok"})
+        mock_litellm.completion.side_effect = [self._resp("garbage"), self._resp(good)]
+        v = self._verifier()
+        result = v.verify(RECORD_A, RECORD_B, score=0.70)
+        assert result["decision"] == "match"
+        assert v.stats()["parse_failures"] == 0
+
+    @patch("entity_resolution.reasoning.llm_verifier.litellm")
+    def test_empty_fenced_block_does_not_crash(self, mock_litellm):
+        mock_litellm.completion.return_value = self._resp("```\n\n```")
+        v = self._verifier()
+        result = v.verify(RECORD_A, RECORD_B, score=0.70)  # must not raise
+        assert result["decision"] == "error"
+
+    @patch("entity_resolution.reasoning.llm_verifier.litellm")
+    def test_max_calls_budget_routes_remaining_to_review(self, mock_litellm):
+        good = json.dumps({"decision": "match", "confidence": 0.9, "reasoning": "ok"})
+        mock_litellm.completion.return_value = self._resp(good)
+        v = self._verifier(max_calls=1)
+        first = v.verify(RECORD_A, RECORD_B, score=0.70)
+        second = v.verify(RECORD_A, RECORD_B, score=0.70)
+        assert first["llm_called"] is True
+        assert second["decision"] == "pending_review"
+        assert second["llm_called"] is False
+        assert v.stats()["budget_stops"] == 1
+        assert mock_litellm.completion.call_count == 1  # second never called the LLM
+
+    @patch("entity_resolution.reasoning.llm_verifier.litellm")
+    def test_stats_count_calls(self, mock_litellm):
+        good = json.dumps({"decision": "no_match", "confidence": 0.8, "reasoning": "x"})
+        mock_litellm.completion.return_value = self._resp(good)
+        v = self._verifier()
+        v.verify(RECORD_A, RECORD_B, score=0.70)
+        v.verify(RECORD_A, RECORD_B, score=0.72)
+        assert v.stats()["calls"] == 2
+
+    @patch("entity_resolution.reasoning.llm_verifier.litellm")
+    def test_mask_fields_hides_pii_from_prompt(self, mock_litellm):
+        good = json.dumps({"decision": "match", "confidence": 0.9, "reasoning": "ok"})
+        mock_litellm.completion.return_value = self._resp(good)
+        a = {"name": "Acme", "ssn": "123-45-6789"}
+        b = {"name": "Acme", "ssn": "123-45-6789"}
+        v = self._verifier(mask_fields=["ssn"])
+        v.verify(a, b, score=0.70)
+        prompt = mock_litellm.completion.call_args.kwargs["messages"][0]["content"]
+        assert "123-45-6789" not in prompt
+        assert "masked:" in prompt
+
+    def test_estimate_cost_returns_structure(self):
+        v = self._verifier()
+        est = v.estimate_cost(num_pairs=100)
+        assert est["num_pairs"] == 100
+        assert "cost_usd" in est
