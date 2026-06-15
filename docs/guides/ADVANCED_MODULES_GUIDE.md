@@ -449,6 +449,7 @@ linker = GraphRAGLinker(
     edge_collection="extracted_links", # edge collection for link edges
     similarity_threshold=0.70,         # minimum score to create a link
     name_field="name",                 # field containing entity names
+    document_collection="documents",   # source-document collection (edge _from side)
 )
 ```
 
@@ -459,12 +460,13 @@ linker = GraphRAGLinker(
 | `edge_collection` | `str` | *required* | Edge collection for storing links |
 | `similarity_threshold` | `float` | `0.70` | Minimum Jaro-Winkler score to link |
 | `name_field` | `str` | `"name"` | Field in the entity collection containing names |
+| `document_collection` | `str \| None` | `None` | Source-document collection. Provenance edges run **document → entity**; required (with `source_doc_key`) for edges to be created. |
 
 **Methods:**
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `link(extracted_entities, source_doc_key=None)` | `list[dict]` | Match extracted entities to existing graph entities. Returns dicts with `extracted`, `matched_key`, `score`, `linked`, `edge_key`. |
+| `link(extracted_entities, source_doc_key=None)` | `list[dict]` | Match extracted entities to existing graph entities. Returns dicts with `extracted`, `matched_key`, `score`, `linked`, `edge_key`. `edge_key` is `None` unless both `document_collection` and `source_doc_key` are provided. |
 
 ### Usage
 
@@ -481,6 +483,7 @@ linker = GraphRAGLinker(
     entity_collection="companies",
     edge_collection="doc_entity_links",
     similarity_threshold=0.75,
+    document_collection="contracts",   # edges run contracts/<key> -> companies/<key>
 )
 results = linker.link(entities, source_doc_key="contract_42")
 

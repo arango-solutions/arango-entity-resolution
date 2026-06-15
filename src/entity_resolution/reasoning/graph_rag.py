@@ -147,6 +147,11 @@ class GraphRAGLinker:
         Minimum similarity score to create a link (0.0–1.0).
     name_field:
         Field name in the entity collection that contains the entity name.
+    document_collection:
+        Collection containing the source documents. Provenance edges run
+        document -> entity, so this (together with ``source_doc_key`` at
+        link time) is required for edges to be created; matches found
+        without document context are returned with ``edge_key: None``.
     """
 
     def __init__(
@@ -156,12 +161,14 @@ class GraphRAGLinker:
         edge_collection: str,
         similarity_threshold: float = 0.70,
         name_field: str = "name",
+        document_collection: Optional[str] = None,
     ) -> None:
         self.db = db
         self.entity_collection = entity_collection
         self.edge_collection = edge_collection
         self.similarity_threshold = similarity_threshold
         self.name_field = name_field
+        self.document_collection = document_collection
 
     def link(
         self,
@@ -181,7 +188,9 @@ class GraphRAGLinker:
         -------
         list[dict]
             Each dict has ``extracted``, ``matched_key``, ``score``,
-            ``linked`` (bool), and ``edge_key`` fields.
+            ``linked`` (bool), and ``edge_key`` fields. ``edge_key`` is
+            None when no provenance edge was created (requires both
+            ``document_collection`` and ``source_doc_key``).
         """
         import jellyfish
 
@@ -240,9 +249,17 @@ class GraphRAGLinker:
         matched_key: str,
         entity: Dict[str, Any],
         source_doc_key: Optional[str],
-    ) -> str:
+    ) -> Optional[str]:
+        if not (self.document_collection and source_doc_key):
+            logger.warning(
+                "No document context (document_collection=%r, source_doc_key=%r); "
+                "skipping provenance edge for entity %r",
+                self.document_collection, source_doc_key, matched_key,
+            )
+            return None
+
         edge = {
-            "_from": f"{self.entity_collection}/{matched_key}",
+            "_from": f"{self.document_collection}/{source_doc_key}",
             "_to": f"{self.entity_collection}/{matched_key}",
             "type": "extracted_link",
             "extracted_name": entity.get("name"),

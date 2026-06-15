@@ -44,6 +44,7 @@ class TestGraphRAGLinker:
         col = MagicMock()
         col.insert.return_value = {"_key": "edge_123"}
         db.collection.return_value = col
+        db._edge_col = col
         return db
 
     def test_link_matches_above_threshold(self):
@@ -87,12 +88,47 @@ class TestGraphRAGLinker:
         assert len(results) == 1
         assert results[0]["linked"] is False
 
-    def test_link_with_source_doc_key(self):
+    def test_link_with_document_context_creates_doc_to_entity_edge(self):
         db = self._make_db([{"key": "c1", "name": "Acme Corporation"}])
-        linker = GraphRAGLinker(db=db, entity_collection="c", edge_collection="e")
+        linker = GraphRAGLinker(
+            db=db,
+            entity_collection="c",
+            edge_collection="e",
+            document_collection="docs",
+        )
         results = linker.link(
             [{"name": "Acme Corp", "type": "company"}],
             source_doc_key="doc_42",
         )
         assert results[0]["linked"] is True
         assert results[0]["edge_key"] == "edge_123"
+
+        edge = db._edge_col.insert.call_args[0][0]
+        assert edge["_from"] == "docs/doc_42"
+        assert edge["_to"] == "c/c1"
+        assert edge["_from"] != edge["_to"]
+        assert edge["source_doc"] == "doc_42"
+
+    def test_link_without_document_context_creates_no_edge(self):
+        db = self._make_db([{"key": "c1", "name": "Acme Corporation"}])
+        linker = GraphRAGLinker(db=db, entity_collection="c", edge_collection="e")
+        results = linker.link(
+            [{"name": "Acme Corp", "type": "company"}],
+            source_doc_key="doc_42",  # no document_collection configured
+        )
+        assert results[0]["linked"] is True
+        assert results[0]["edge_key"] is None
+        db._edge_col.insert.assert_not_called()
+
+    def test_link_without_source_doc_creates_no_edge(self):
+        db = self._make_db([{"key": "c1", "name": "Acme Corporation"}])
+        linker = GraphRAGLinker(
+            db=db,
+            entity_collection="c",
+            edge_collection="e",
+            document_collection="docs",
+        )
+        results = linker.link([{"name": "Acme Corp", "type": "company"}])
+        assert results[0]["linked"] is True
+        assert results[0]["edge_key"] is None
+        db._edge_col.insert.assert_not_called()
