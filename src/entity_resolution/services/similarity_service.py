@@ -196,7 +196,15 @@ class SimilarityService(BaseEntityResolutionService):
             # Global thresholds
             "global": {
                 "upper_threshold": 3.5,   # Clear match (increased for more fields)
-                "lower_threshold": -1.5   # Clear non-match
+                "lower_threshold": -1.5,  # Clear non-match
+                # Scoring method: "weighted_heuristic" (default, importance-weighted,
+                # heuristic confidence) or "fellegi_sunter" (pure LLR sum, calibrated
+                # posterior confidence). Default kept for behavior stability until
+                # EM-estimated parameters land (Phase 1).
+                "scoring_method": "weighted_heuristic",
+                # Prior match probability used only by fellegi_sunter to convert the
+                # LLR sum into a posterior (default 0.5 = neutral prior).
+                "match_prior": 0.5,
             }
         }
     
@@ -298,9 +306,9 @@ class SimilarityService(BaseEntityResolutionService):
                 similarities["company_ngram"] = self._ngram_similarity(
                     doc_a['company'], doc_b['company'])
             
-            # Apply Fellegi-Sunter framework
-            result = self._compute_fellegi_sunter_score(similarities, field_weights, include_details)
-            
+            # Score via the configured method (weighted_heuristic by default)
+            result = self._score_pair(similarities, field_weights, include_details)
+
             return result
             
         except Exception as e:
@@ -568,67 +576,147 @@ class SimilarityService(BaseEntityResolutionService):
         
         return result
 
-    def _compute_fellegi_sunter_score(self, similarities: Dict[str, float],
-                                     field_weights: Dict[str, Any], 
-                                     include_details: bool = False) -> Dict[str, Any]:
-        """Apply Fellegi-Sunter probabilistic framework"""
-        total_score = 0
+    def _score_pair(self, similarities: Dict[str, float],
+                    field_weights: Dict[str, Any],
+                    include_details: bool = False) -> Dict[str, Any]:
+        """Dispatch scoring by configured method.
+
+        ``field_weights["global"]["scoring_method"]`` selects:
+        - ``"weighted_heuristic"`` (default): importance-weighted average of
+          per-field log-likelihood ratios. NOT a calibrated probability; the
+          ``confidence`` it returns is a heuristic in [0,1].
+        - ``"fellegi_sunter"``: a pure Fellegi-Sunter log-likelihood-ratio sum
+          (no importance multiplier) with a calibrated posterior ``confidence``.
+        """
+        method = field_weights.get("global", {}).get("scoring_method", "weighted_heuristic")
+        if method == "fellegi_sunter":
+            return self._compute_fellegi_sunter_score(similarities, field_weights, include_details)
+        return self._compute_weighted_heuristic_score(similarities, field_weights, include_details)
+
+    def _field_llrs(self, similarities: Dict[str, float],
+                    field_weights: Dict[str, Any]):
+        """Per-field Fellegi-Sunter log-likelihood ratios.
+
+        Returns ``(field_scores, agreeing_count)`` where each field score holds
+        the (natural-log) LLR contributed by that field's agreement state.
+        """
         field_scores = {}
-        total_weight = 0
-        
+        agreeing = 0
         for field, sim_value in similarities.items():
-            if field in field_weights:
-                weights = field_weights[field]
-                threshold = weights.get("threshold", 0.5)
-                agreement = sim_value >= threshold
-                
-                # Fellegi-Sunter log-likelihood ratio
-                m_prob = weights.get("m_prob", 0.8)
-                u_prob = weights.get("u_prob", 0.05)
-                
-                # Ensure probabilities are valid
-                m_prob = max(min(m_prob, 0.999), 0.001)
-                u_prob = max(min(u_prob, 0.999), 0.001)
-                
-                if agreement:
-                    weight = math.log(m_prob / u_prob)
-                else:
-                    weight = math.log((1 - m_prob) / (1 - u_prob))
-                
-                field_scores[field] = {
-                    "similarity": sim_value,
-                    "agreement": agreement,
-                    "weight": weight,
-                    "threshold": threshold,
-                    "m_prob": m_prob,
-                    "u_prob": u_prob
-                }
-                
-                # Add field importance multiplier
-                importance = weights.get("importance", 1.0)
-                weighted_score = weight * importance
-                total_score += weighted_score
-                total_weight += importance
-        
-        # Normalize score by total weight
-        normalized_score = total_score / total_weight if total_weight > 0 else 0
-        
-        # Calculate confidence and match decision
+            if field not in field_weights:
+                continue
+            weights = field_weights[field]
+            threshold = weights.get("threshold", 0.5)
+            agreement = sim_value >= threshold
+
+            m_prob = max(min(weights.get("m_prob", 0.8), 0.999), 0.001)
+            u_prob = max(min(weights.get("u_prob", 0.05), 0.999), 0.001)
+
+            if agreement:
+                llr = math.log(m_prob / u_prob)
+                agreeing += 1
+            else:
+                llr = math.log((1 - m_prob) / (1 - u_prob))
+
+            field_scores[field] = {
+                "similarity": sim_value,
+                "agreement": agreement,
+                "weight": llr,
+                "threshold": threshold,
+                "m_prob": m_prob,
+                "u_prob": u_prob,
+            }
+        return field_scores, agreeing
+
+    def _compute_fellegi_sunter_score(self, similarities: Dict[str, float],
+                                     field_weights: Dict[str, Any],
+                                     include_details: bool = False) -> Dict[str, Any]:
+        """Pure Fellegi-Sunter scoring with a calibrated posterior.
+
+        The match score is the unweighted sum of per-field log-likelihood
+        ratios (true Fellegi-Sunter — no importance multiplier). ``confidence``
+        is the posterior match probability ``P(match | gamma)`` derived from
+        that LLR sum and a configurable prior, so it is a real probability in
+        [0,1] and monotone in the score.
+        """
+        field_scores, agreeing = self._field_llrs(similarities, field_weights)
+        total_score = sum(f["weight"] for f in field_scores.values())
+
         global_weights = field_weights.get("global", {})
         upper_threshold = global_weights.get("upper_threshold", 2.0)
         lower_threshold = global_weights.get("lower_threshold", -1.0)
-        
+
+        # Posterior odds = prior odds * likelihood ratio; in log space the
+        # log-LR is exactly total_score, so logit(posterior) = logit(prior) +
+        # total_score and the posterior is its logistic transform.
+        prior = max(min(global_weights.get("match_prior", 0.5), 0.999999), 1e-6)
+        prior_logit = math.log(prior / (1 - prior))
+        confidence = 1.0 / (1.0 + math.exp(-(total_score + prior_logit)))
+
+        is_match = total_score > upper_threshold
+        is_possible_match = lower_threshold < total_score <= upper_threshold
+
+        result = {
+            "success": True,
+            "total_score": total_score,
+            "normalized_score": total_score,
+            "is_match": is_match,
+            "is_possible_match": is_possible_match,
+            "confidence": confidence,
+            "confidence_is_calibrated": True,
+            "decision": "match" if is_match else ("possible_match" if is_possible_match else "non_match"),
+            "method": "fellegi_sunter",
+        }
+
+        if include_details:
+            result["field_scores"] = field_scores
+            result["thresholds"] = global_weights
+            result["match_prior"] = prior
+            result["statistics"] = {
+                "fields_compared": len(field_scores),
+                "agreeing_fields": agreeing,
+                "total_weight": len(field_scores),
+            }
+
+        return result
+
+    def _compute_weighted_heuristic_score(self, similarities: Dict[str, float],
+                                          field_weights: Dict[str, Any],
+                                          include_details: bool = False) -> Dict[str, Any]:
+        """Importance-weighted heuristic score (legacy default behavior).
+
+        Per-field LLRs are averaged using each field's ``importance`` as a
+        weight. This is NOT the Fellegi-Sunter model and the ``confidence`` it
+        returns is a heuristic distance-from-threshold value, NOT a calibrated
+        probability — consumers must not treat it as one (see
+        ``confidence_is_calibrated``).
+        """
+        field_scores, agreeing = self._field_llrs(similarities, field_weights)
+
+        total_score = 0.0
+        total_weight = 0.0
+        for field, fs in field_scores.items():
+            importance = field_weights[field].get("importance", 1.0)
+            total_score += fs["weight"] * importance
+            total_weight += importance
+
+        normalized_score = total_score / total_weight if total_weight > 0 else 0
+
+        global_weights = field_weights.get("global", {})
+        upper_threshold = global_weights.get("upper_threshold", 2.0)
+        lower_threshold = global_weights.get("lower_threshold", -1.0)
+
         is_match = total_score > upper_threshold
         is_possible_match = total_score > lower_threshold and total_score <= upper_threshold
-        
-        # Calculate confidence based on distance from thresholds
+
+        # Heuristic confidence based on distance from thresholds (NOT a probability).
         if is_match:
             confidence = min(0.5 + (total_score - upper_threshold) / (upper_threshold * 2), 1.0)
         elif is_possible_match:
             confidence = 0.3 + 0.4 * (total_score - lower_threshold) / (upper_threshold - lower_threshold)
         else:
             confidence = max(0.1 * (total_score - lower_threshold) / abs(lower_threshold), 0.0)
-        
+
         result = {
             "success": True,
             "total_score": total_score,
@@ -636,17 +724,18 @@ class SimilarityService(BaseEntityResolutionService):
             "is_match": is_match,
             "is_possible_match": is_possible_match,
             "confidence": confidence,
+            "confidence_is_calibrated": False,
             "decision": "match" if is_match else ("possible_match" if is_possible_match else "non_match"),
-            "method": "fellegi_sunter"
+            "method": "weighted_heuristic",
         }
-        
+
         if include_details:
             result["field_scores"] = field_scores
             result["thresholds"] = global_weights
             result["statistics"] = {
                 "fields_compared": len(field_scores),
-                "agreeing_fields": sum(1 for f in field_scores.values() if f["agreement"]),
-                "total_weight": total_weight
+                "agreeing_fields": agreeing,
+                "total_weight": total_weight,
             }
-        
+
         return result

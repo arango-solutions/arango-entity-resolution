@@ -112,3 +112,92 @@ def test_compute_batch_similarity_handles_missing_docs_and_stats() -> None:
     assert out["statistics"]["failed_pairs"] == 1
     assert len(out["results"]) == 2
 
+
+
+def _svc():
+    with pytest.warns(DeprecationWarning):
+        return SimilarityService()
+
+
+def test_fellegi_sunter_ignores_importance_multiplier() -> None:
+    """Pure FS sums unweighted LLRs; importance must not change the score."""
+    svc = _svc()
+    sims = {"email_exact": 1.0, "phone_exact": 1.0}
+    base = {
+        "email_exact": {"m_prob": 0.95, "u_prob": 0.001, "threshold": 1.0, "importance": 1.0},
+        "phone_exact": {"m_prob": 0.9, "u_prob": 0.005, "threshold": 1.0, "importance": 1.0},
+        "global": {"upper_threshold": 0.1, "lower_threshold": -1.0},
+    }
+    weighted = {
+        "email_exact": {**base["email_exact"], "importance": 7.0},
+        "phone_exact": {**base["phone_exact"], "importance": 0.2},
+        "global": base["global"],
+    }
+    s1 = svc._compute_fellegi_sunter_score(sims, base)
+    s2 = svc._compute_fellegi_sunter_score(sims, weighted)
+    assert s1["total_score"] == pytest.approx(s2["total_score"])
+    expected = math.log(0.95 / 0.001) + math.log(0.9 / 0.005)
+    assert s1["total_score"] == pytest.approx(expected)
+
+
+def test_fellegi_sunter_confidence_is_calibrated_posterior() -> None:
+    svc = _svc()
+    sims = {"email_exact": 1.0, "phone_exact": 1.0}
+    weights = {
+        "email_exact": {"m_prob": 0.95, "u_prob": 0.001, "threshold": 1.0},
+        "phone_exact": {"m_prob": 0.9, "u_prob": 0.005, "threshold": 1.0},
+        "global": {"upper_threshold": 0.1, "lower_threshold": -1.0, "match_prior": 0.5},
+    }
+    out = svc._compute_fellegi_sunter_score(sims, weights)
+    assert out["confidence_is_calibrated"] is True
+    assert 0.0 <= out["confidence"] <= 1.0
+    # sigmoid(total_score) with neutral prior
+    assert out["confidence"] == pytest.approx(1.0 / (1.0 + math.exp(-out["total_score"])))
+
+
+def test_fellegi_sunter_posterior_monotone_in_score() -> None:
+    svc = _svc()
+    weights = {
+        "email_exact": {"m_prob": 0.95, "u_prob": 0.001, "threshold": 1.0},
+        "global": {"upper_threshold": 0.1, "lower_threshold": -1.0},
+    }
+    agree = svc._compute_fellegi_sunter_score({"email_exact": 1.0}, weights)
+    disagree = svc._compute_fellegi_sunter_score({"email_exact": 0.0}, weights)
+    assert agree["total_score"] > disagree["total_score"]
+    assert agree["confidence"] > disagree["confidence"]
+
+
+def test_default_scoring_method_is_weighted_heuristic() -> None:
+    svc = _svc()
+    sims = {"email_exact": 1.0}
+    weights = svc.get_default_field_weights()
+    out = svc._score_pair(sims, weights)
+    assert out["method"] == "weighted_heuristic"
+    assert out["confidence_is_calibrated"] is False
+
+
+def test_scoring_method_dispatch_selects_fellegi_sunter() -> None:
+    svc = _svc()
+    sims = {"email_exact": 1.0}
+    weights = svc.get_default_field_weights()
+    weights["global"]["scoring_method"] = "fellegi_sunter"
+    out = svc._score_pair(sims, weights)
+    assert out["method"] == "fellegi_sunter"
+    assert out["confidence_is_calibrated"] is True
+
+
+def test_weighted_heuristic_matches_legacy_formula() -> None:
+    """Default path preserves the original importance-weighted behavior."""
+    svc = _svc()
+    sims = {"email_exact": 1.0, "phone_exact": 0.0}
+    weights = {
+        "email_exact": {"m_prob": 0.95, "u_prob": 0.001, "threshold": 1.0, "importance": 2.0},
+        "phone_exact": {"m_prob": 0.9, "u_prob": 0.005, "threshold": 1.0, "importance": 1.0},
+        "global": {"upper_threshold": 3.5, "lower_threshold": -1.5},
+    }
+    out = svc._compute_weighted_heuristic_score(sims, weights)
+    llr_email = math.log(0.95 / 0.001)        # agreement
+    llr_phone = math.log((1 - 0.9) / (1 - 0.005))  # disagreement
+    expected_total = llr_email * 2.0 + llr_phone * 1.0
+    assert out["total_score"] == pytest.approx(expected_total)
+    assert out["normalized_score"] == pytest.approx(expected_total / 3.0)
