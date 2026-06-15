@@ -136,12 +136,18 @@ class GoldenRecordPersistenceService:
 
             consolidated, provenance = self._consolidate(member_docs)
 
+            member_keys = [extract_key_from_vertex_id(mid) for mid in member_ids]
             golden_doc: Dict[str, Any] = {
                 "_key": golden_key,
                 "clusterId": cluster.get("cluster_id", cluster.get("_key")),
                 "clusterSize": len(member_ids),
                 "memberIds": list(member_ids),
-                "memberKeys": [extract_key_from_vertex_id(mid) for mid in member_ids],
+                "memberKeys": member_keys,
+                # Content hash of the source cluster's members. When the cluster
+                # later changes, this no longer matches any live cluster and the
+                # record can be detected as stale (see FeedbackApplicationService).
+                "sourceClusterHash": self.cluster_hash(member_keys),
+                "stale": False,
                 "runId": rid,
                 "updatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "method": method,
@@ -221,6 +227,15 @@ class GoldenRecordPersistenceService:
         # Deterministic: hash of sorted member vertex ids.
         s = "|".join(sorted(member_ids))
         return hashlib.md5(s.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def cluster_hash(member_keys: Sequence[str]) -> str:
+        """Order-independent content hash of a cluster's member keys.
+
+        Stamped on each golden record and recomputed by the feedback service
+        to detect when a golden record's source cluster has changed.
+        """
+        return hashlib.md5("|".join(sorted(member_keys)).encode("utf-8")).hexdigest()
 
     def _edge_key(self, from_id: str, to_id: str) -> str:
         # Deterministic, order-independent.

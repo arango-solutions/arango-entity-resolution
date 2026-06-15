@@ -159,6 +159,7 @@ async def submit_verdict(
     # Apply it to the similarity graph and re-cluster the affected component.
     edge_coll = resolve_collection_name(request, f"{collection}_similarity_edges")
     cluster_coll = resolve_collection_name(request, f"{collection}_clusters")
+    golden_coll = resolve_collection_name(request, f"{collection}_golden_records")
     actor = getattr(request.state, "reviewer", None) or "human"
 
     response: Dict[str, Any] = {"status": "ok", "verdict_key": doc_key}
@@ -169,6 +170,7 @@ async def submit_verdict(
             edge_collection=edge_coll,
             vertex_collection=collection,
             cluster_collection=cluster_coll,
+            golden_collection=golden_coll,
         )
         try:
             result = applier.apply_and_recluster(

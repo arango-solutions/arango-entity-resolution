@@ -30,6 +30,12 @@ class _FakeCollection:
             self.docs[d["_key"]] = dict(d)
         return len(docs)
 
+    def update(self, doc):
+        key = doc["_key"]
+        if key not in self.docs:
+            raise Exception("not found")
+        self.docs[key].update(doc)
+
     def delete(self, key):
         if key not in self.docs:
             raise Exception("not found")
@@ -73,12 +79,20 @@ class _FakeAQL:
             ]
             return iter(out)
 
-        if "INTERSECTION" in q:
+        if "INTERSECTION" in q and "@clusters" in bind_vars:
             clusters = self.db._coll(bind_vars["@clusters"])
             touched = set(bind_vars["touched"])
             return iter([
                 dict(c) for c in clusters.docs.values()
                 if touched.intersection(c.get("member_keys", []))
+            ])
+
+        if "INTERSECTION" in q and "@golden" in bind_vars:
+            golden = self.db._coll(bind_vars["@golden"])
+            touched = set(bind_vars["touched"])
+            return iter([
+                dict(g) for g in golden.docs.values()
+                if touched.intersection(g.get("memberKeys", []))
             ])
 
         return iter([])
@@ -260,3 +274,75 @@ def test_concurrent_component_lock_blocks_second_verdict():
     # After release, it succeeds.
     out = svc.apply_and_recluster("A", "B", "match")
     assert out["verdict"]["action"] == "match"
+
+
+# ---------------------------------------------------------------------------
+# 0.7 — golden-record staleness on cluster change
+# ---------------------------------------------------------------------------
+
+def _service_with_golden(db):
+    return FeedbackApplicationService(
+        db=db,
+        edge_collection="similarTo",
+        vertex_collection="Person",
+        cluster_collection="person_clusters",
+        golden_collection="golden_records",
+    )
+
+
+def _seed_split_scenario(db, svc):
+    _add_edge(db, svc, "A", "B", 0.9)
+    _add_edge(db, svc, "B", "C", 0.55)
+    db._coll("person_clusters").docs["cluster_000000"] = {
+        "_key": "cluster_000000", "cluster_id": 0,
+        "members": ["Person/A", "Person/B", "Person/C"],
+        "member_keys": ["A", "B", "C"], "size": 3,
+    }
+    db._coll("golden_records").docs["g_abc"] = {
+        "_key": "g_abc", "memberKeys": ["A", "B", "C"], "stale": False,
+        "sourceClusterHash": "orig",
+    }
+
+
+def test_golden_record_flagged_stale_when_cluster_changes():
+    db = _FakeDB()
+    svc = _service_with_golden(db)
+    _seed_split_scenario(db, svc)
+
+    result = svc.apply_and_recluster("B", "C", "no_match")
+
+    g = db._coll("golden_records").docs["g_abc"]
+    assert g["stale"] is True
+    assert "staleReason" in g
+    assert result["recluster"]["golden"]["flagged_stale"] == 1
+
+
+def test_golden_record_deleted_on_auto_refresh():
+    db = _FakeDB()
+    svc = _service_with_golden(db)
+    _seed_split_scenario(db, svc)
+
+    result = svc.apply_and_recluster("B", "C", "no_match", auto_refresh=True)
+
+    assert "g_abc" not in db._coll("golden_records").docs
+    assert result["recluster"]["golden"]["deleted"] == 1
+
+
+def test_golden_record_survives_when_cluster_unchanged():
+    db = _FakeDB()
+    svc = _service_with_golden(db)
+    # A-B cluster with a matching golden record; confirm A-B (no membership change).
+    _add_edge(db, svc, "A", "B", 0.9)
+    db._coll("person_clusters").docs["cluster_000000"] = {
+        "_key": "cluster_000000", "cluster_id": 0,
+        "members": ["Person/A", "Person/B"],
+        "member_keys": ["A", "B"], "size": 2,
+    }
+    db._coll("golden_records").docs["g_ab"] = {
+        "_key": "g_ab", "memberKeys": ["A", "B"], "stale": False,
+    }
+
+    svc.apply_and_recluster("A", "B", "match")
+
+    g = db._coll("golden_records").docs["g_ab"]
+    assert g["stale"] is False  # member set still matches a live cluster

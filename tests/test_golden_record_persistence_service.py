@@ -97,6 +97,13 @@ def test_persists_golden_records_and_resolvedto_edges(db):
     tos = {e["_to"] for e in edges.docs}
     assert len(tos) == 1
 
+    # 0.7: golden records carry a source-cluster hash and a stale flag so
+    # cluster changes can later invalidate them.
+    assert gr["stale"] is False
+    assert gr["sourceClusterHash"] == GoldenRecordPersistenceService.cluster_hash(
+        gr["memberKeys"]
+    )
+
 
 def test_idempotent_rerun_does_not_create_more_goldens_or_edges(db):
     svc = GoldenRecordPersistenceService(

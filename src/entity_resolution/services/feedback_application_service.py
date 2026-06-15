@@ -69,11 +69,15 @@ class FeedbackApplicationService:
         edge_collection: str,
         vertex_collection: str,
         cluster_collection: str,
+        golden_collection: Optional[str] = None,
     ) -> None:
         self.db = db
         self.edge_collection = edge_collection
         self.vertex_collection = vertex_collection
         self.cluster_collection = cluster_collection
+        # When set, golden records whose source cluster changed are flagged
+        # stale (or regenerated when auto_refresh is on).
+        self.golden_collection = golden_collection
 
     # ------------------------------------------------------------------
     # Edge keying (must match SimilarityEdgeService deterministic keys)
@@ -210,11 +214,13 @@ class FeedbackApplicationService:
         joined = "|".join(sorted(member_keys))
         return "c_" + hashlib.md5(joined.encode("utf-8")).hexdigest()[:24]
 
-    def recluster_component(self, member_key: str) -> Dict[str, Any]:
+    def recluster_component(self, member_key: str, *, auto_refresh: bool = False) -> Dict[str, Any]:
         """Recompute clusters for the component containing ``member_key``.
 
         Rewrites only the cluster documents that referenced any vertex in the
-        affected component; all other clusters are left untouched.
+        affected component; all other clusters are left untouched. When a
+        ``golden_collection`` is configured, golden records whose source cluster
+        no longer exists are flagged stale (and deleted when ``auto_refresh``).
         """
         start_vid = self._vid(member_key)
         edges = self._fetch_component_edges(start_vid)
@@ -264,12 +270,62 @@ class FeedbackApplicationService:
         if new_docs:
             coll.insert_many(new_docs, overwrite_mode="replace")
 
-        return {
+        result = {
             "component_size": len(touched_keys),
             "clusters_before": len(old_docs),
             "clusters_after": len(new_docs),
             "cluster_keys": sorted(new_keys),
         }
+
+        if self.golden_collection and self.db.has_collection(self.golden_collection):
+            surviving = {frozenset(d["member_keys"]) for d in new_docs}
+            result["golden"] = self._handle_golden_staleness(
+                touched_keys, surviving, auto_refresh=auto_refresh
+            )
+
+        return result
+
+    def _handle_golden_staleness(
+        self, touched_keys, surviving_member_sets, *, auto_refresh: bool
+    ) -> Dict[str, Any]:
+        """Flag (or delete) golden records whose source cluster changed.
+
+        A golden record is still valid only if its exact member set matches a
+        surviving cluster; otherwise it was built from a cluster that no longer
+        exists and is flagged ``stale`` (deleted when ``auto_refresh``). Full
+        regeneration of the new clusters happens on the next persistence run.
+        """
+        coll = self.db.collection(self.golden_collection)
+        affected = list(self.db.aql.execute(
+            """
+            FOR g IN @@golden
+                FILTER LENGTH(INTERSECTION(g.memberKeys, @touched)) > 0
+                RETURN g
+            """,
+            bind_vars={"@golden": self.golden_collection, "touched": list(touched_keys)},
+        ))
+
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        stale, deleted = 0, 0
+        for g in affected:
+            if frozenset(g.get("memberKeys", [])) in surviving_member_sets:
+                continue  # still matches a live cluster
+            if auto_refresh:
+                try:
+                    coll.delete(g["_key"])
+                    deleted += 1
+                except Exception:
+                    pass
+            else:
+                coll.update({
+                    "_key": g["_key"],
+                    "stale": True,
+                    "staleReason": "source cluster changed by feedback verdict",
+                    "staleAt": now,
+                })
+                stale += 1
+
+        return {"flagged_stale": stale, "deleted": deleted}
 
     # ------------------------------------------------------------------
     # Locking + full loop
@@ -315,6 +371,7 @@ class FeedbackApplicationService:
         *,
         actor: str = "human",
         score: Optional[float] = None,
+        auto_refresh: bool = False,
     ) -> Dict[str, Any]:
         """Apply a verdict and re-cluster the affected component, under a lock.
 
@@ -328,7 +385,7 @@ class FeedbackApplicationService:
             )
         try:
             verdict = self.apply_verdict(key_a, key_b, decision, actor=actor, score=score)
-            recluster = self.recluster_component(key_a)
+            recluster = self.recluster_component(key_a, auto_refresh=auto_refresh)
             return {"verdict": verdict, "recluster": recluster}
         finally:
             self._release_lock(lock_key)

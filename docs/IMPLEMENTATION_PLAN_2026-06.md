@@ -70,7 +70,9 @@ In [llm_verifier.py](../src/entity_resolution/reasoning/llm_verifier.py):
 - Consolidate `VERSION_HISTORY.md` + `VERSION_SUMMARY.md` into `CHANGELOG.md`; delete the stray `~/` directory; delete `tests/archive_broken/`.
 - Default `apply_weights=True` in `TupleEmbeddingSerializer` when field weights are configured (or remove the parameter) — currently configured weights are silently inert.
 
-### 0.7 Golden-record staleness on cluster change (S)
+### 0.7 Golden-record staleness on cluster change (S) — ✅ DONE
+
+**Status:** `GoldenRecordPersistenceService` stamps `sourceClusterHash` + `stale: False` on every golden record. `FeedbackApplicationService` (given a `golden_collection`) flags golden records whose member set no longer matches a surviving cluster as `stale` (with reason/timestamp), or deletes them when `auto_refresh` is set; the UI verdict endpoint passes the golden collection through. Full regeneration happens on the next persistence run.
 
 **Problem:** `GoldenRecordPersistenceService` upserts per-cluster documents but nothing invalidates them when clusters change — every cluster-mutating path (0.1 verdict re-clustering, 1.3 repair, 2.2 editing) leaves wrong golden records behind with no signal.
 
