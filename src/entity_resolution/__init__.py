@@ -29,6 +29,8 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "ClusteringService":           (".services.clustering_service",      "ClusteringService"),
     "GoldenRecordPersistenceService": (".services.golden_record_persistence_service",
                                        "GoldenRecordPersistenceService"),
+    "FeedbackApplicationService":  (".services.feedback_application_service",
+                                    "FeedbackApplicationService"),
     "BaseEntityResolutionService": (".services.base_service",            "BaseEntityResolutionService"),
     "DataManager":                 (".data.data_manager",                "DataManager"),
 
@@ -134,6 +136,7 @@ __all__ = [
     'SimilarityService',
     'ClusteringService',
     'GoldenRecordPersistenceService',
+    'FeedbackApplicationService',
     'BaseEntityResolutionService',
     'DataManager',
 

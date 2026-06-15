@@ -33,8 +33,11 @@ class PythonUnionFindBackend:
         self.vertex_collection = vertex_collection
 
     def _fetch_edges(self) -> List[list]:
+        # Exclude human/LLM-suppressed edges so "not a match" verdicts split
+        # clusters; confirmed edges are present in the collection and cluster
+        # normally.
         cursor = self.db.aql.execute(
-            "FOR e IN @@collection RETURN [e._from, e._to]",
+            "FOR e IN @@collection FILTER e.suppressed != true RETURN [e._from, e._to]",
             bind_vars={"@collection": self.edge_collection_name},
         )
         return list(cursor)

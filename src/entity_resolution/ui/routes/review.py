@@ -125,8 +125,19 @@ async def submit_verdict(
     key_b: str,
     body: VerdictRequest,
 ) -> Dict[str, Any]:
-    """Record a human correction for a pair."""
+    """Record a human correction for a pair and apply it to the graph.
+
+    The verdict is persisted (for threshold optimization) and then applied:
+    a ``no_match`` suppresses the similarity edge, a ``match`` confirms it, and
+    the affected connected component is re-clustered. ``clusters_changed`` lets
+    the frontend invalidate its cluster caches.
+    """
     from entity_resolution.reasoning.feedback import FeedbackStore
+    from entity_resolution.services.feedback_application_service import (
+        FeedbackApplicationError,
+        FeedbackApplicationService,
+    )
+    from entity_resolution.ui.routes.collections import resolve_collection_name
     from entity_resolution.utils.validation import validate_collection_name
 
     if request.app.state.readonly:
@@ -137,13 +148,42 @@ async def submit_verdict(
     fb_coll = _feedback_collection(collection)
     store = FeedbackStore(db, collection=fb_coll)
 
+    # Persist the verdict (training data for threshold optimization).
     doc_key = store.record_human_correction(
         key_a=key_a,
         key_b=key_b,
         correct_decision=body.decision,
         confidence=body.confidence if body.confidence is not None else 1.0,
     )
-    return {"status": "ok", "verdict_key": doc_key}
+
+    # Apply it to the similarity graph and re-cluster the affected component.
+    edge_coll = resolve_collection_name(request, f"{collection}_similarity_edges")
+    cluster_coll = resolve_collection_name(request, f"{collection}_clusters")
+    actor = getattr(request.state, "reviewer", None) or "human"
+
+    response: Dict[str, Any] = {"status": "ok", "verdict_key": doc_key}
+
+    if db.has_collection(edge_coll):
+        applier = FeedbackApplicationService(
+            db=db,
+            edge_collection=edge_coll,
+            vertex_collection=collection,
+            cluster_collection=cluster_coll,
+        )
+        try:
+            result = applier.apply_and_recluster(
+                key_a, key_b, body.decision, actor=actor
+            )
+            response["applied"] = result["verdict"]["action"]
+            response["clusters_changed"] = result["recluster"]["cluster_keys"]
+            response["recluster"] = result["recluster"]
+        except FeedbackApplicationError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+    else:
+        response["applied"] = None
+        response["clusters_changed"] = []
+
+    return response
 
 
 @router.post("/{collection}/optimize")

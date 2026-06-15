@@ -60,12 +60,14 @@ class AQLGraphBackend:
         vertex_collections = self._get_vertex_collections()
         with_clause = f"WITH {', '.join(vertex_collections)}" if vertex_collections else ""
 
+        # Suppressed edges (human/LLM "not a match" verdicts) are excluded so
+        # they neither seed vertices nor connect components.
         vertices_query = """
         LET from_vertices = (
-            FOR e IN @@edge_collection RETURN DISTINCT e._from
+            FOR e IN @@edge_collection FILTER e.suppressed != true RETURN DISTINCT e._from
         )
         LET to_vertices = (
-            FOR e IN @@edge_collection RETURN DISTINCT e._to
+            FOR e IN @@edge_collection FILTER e.suppressed != true RETURN DISTINCT e._to
         )
         RETURN UNION_DISTINCT(from_vertices, to_vertices)
         """
@@ -85,9 +87,14 @@ class AQLGraphBackend:
             if start_vertex in visited:
                 continue
 
+            # A vertex belongs to the component only if reachable by a path
+            # whose every edge is non-suppressed; suppressed edges must not
+            # bridge two otherwise-separate components.
             component_query = f"""
             {with_clause}
-            FOR v IN 0..999999 ANY @start_vertex @@edge_collection
+            FOR v, e, p IN 0..999999 ANY @start_vertex @@edge_collection
+                OPTIONS {{uniqueVertices: "global", bfs: true}}
+                FILTER p.edges[*].suppressed ALL != true
                 RETURN DISTINCT v._id
             """
 

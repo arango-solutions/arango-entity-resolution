@@ -33,8 +33,10 @@ class PythonDFSBackend:
         self.vertex_collection = vertex_collection
 
     def cluster(self) -> List[List[str]]:
+        # Exclude suppressed edges (human/LLM "not a match" verdicts).
         edges_query = """
         FOR e IN @@collection
+        FILTER e.suppressed != true
         RETURN {from: e._from, to: e._to}
         """
 

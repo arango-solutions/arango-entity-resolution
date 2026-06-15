@@ -455,8 +455,11 @@ class WCCClusteringService:
             for member in cluster_members:
                 membership[member] = cluster_key
 
+        # Suppressed edges are excluded from quality metrics so coherence
+        # reflects the post-feedback graph.
         edges_query = """
         FOR e IN @@edge_collection
+            FILTER e.suppressed != true
             RETURN {
                 from: e._from,
                 to: e._to,

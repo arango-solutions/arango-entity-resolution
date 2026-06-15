@@ -16,9 +16,11 @@ Sizing: **S** ≤ 2 days · **M** ≈ 3–7 days · **L** ≈ 2–4 weeks of foc
 
 ## Phase 0 — Correctness and Trust (target: v3.6.0)
 
-### 0.1 Close the feedback loop (M) — *the keystone fix*
+### 0.1 Close the feedback loop (M) — *the keystone fix* — ✅ DONE
 
 **Problem:** Human/LLM verdicts persist in `FeedbackStore` but never change edges, clusters, or thresholds (review §2.2).
+
+**Status:** Implemented in `FeedbackApplicationService` — verdicts suppress/confirm edges via AQL UPSERT (merge, preserving computed scores), the affected component is re-clustered with in-process union-find, all clustering backends now exclude suppressed edges, and the UI verdict endpoint returns `clusters_changed`. Per-component TTL locking serializes concurrent verdicts. The A–B–C split acceptance test passes.
 
 **Design:** New `FeedbackApplicationService` in `src/entity_resolution/services/feedback_application_service.py`:
 

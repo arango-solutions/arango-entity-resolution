@@ -48,8 +48,9 @@ class PythonSparseBackend:
             )
 
         logger.info("Fetching edges from %s for sparse WCC...", self.edge_collection_name)
+        # Exclude suppressed edges (human/LLM "not a match" verdicts).
         cursor = self.db.aql.execute(
-            "FOR e IN @@collection RETURN [e._from, e._to]",
+            "FOR e IN @@collection FILTER e.suppressed != true RETURN [e._from, e._to]",
             bind_vars={"@collection": self.edge_collection_name},
         )
         edges = list(cursor)
