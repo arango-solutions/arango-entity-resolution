@@ -68,9 +68,8 @@ class _FakeAQL:
                 edges.docs[key] = dict(bind_vars["insert"])
             return iter([])
 
-        if "p.edges[*].suppressed ALL != true" in q:
-            # Component traversal: return non-suppressed edges (tests use a
-            # single small graph, so the whole edge set is one component).
+        if q.startswith("FOR e IN") and "RETURN { from" in q:
+            # Active (non-suppressed) edges.
             edges = self.db._coll(bind_vars["@edges"])
             out = [
                 {"from": e["_from"], "to": e["_to"]}
@@ -81,10 +80,10 @@ class _FakeAQL:
 
         if "INTERSECTION" in q and "@clusters" in bind_vars:
             clusters = self.db._coll(bind_vars["@clusters"])
-            touched = set(bind_vars["touched"])
+            needle = set(bind_vars.get("touched") or bind_vars.get("seeds") or [])
             return iter([
                 dict(c) for c in clusters.docs.values()
-                if touched.intersection(c.get("member_keys", []))
+                if needle.intersection(c.get("member_keys", []))
             ])
 
         if "INTERSECTION" in q and "@golden" in bind_vars:
@@ -152,16 +151,12 @@ def test_edge_key_matches_similarity_edge_service():
     assert svc._edge_key(from_id, to_id) == svc._edge_key(to_id, from_id)
 
 
-def test_connected_components_splits_on_removed_edge():
+def test_union_find_groups_connected_vertices():
     svc = _service(_FakeDB())
-    # A-B only (B-C removed); seed A
-    comps = svc._connected_components(
-        [("Person/A", "Person/B")], "Person/A"
-    )
-    comps_sets = sorted([sorted(c) for c in comps])
-    assert ["A", "B"] in comps_sets
-    # C is absent (isolated, no edge) — not returned
-    assert all("C" not in c for c in comps_sets)
+    roots = svc._union_find([("Person/A", "Person/B"), ("Person/C", "Person/D")])
+    assert roots["Person/A"] == roots["Person/B"]
+    assert roots["Person/C"] == roots["Person/D"]
+    assert roots["Person/A"] != roots["Person/C"]
 
 
 def test_cluster_key_is_stable_and_order_independent():

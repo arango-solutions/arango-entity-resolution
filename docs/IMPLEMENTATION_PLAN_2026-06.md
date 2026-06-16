@@ -20,7 +20,7 @@ Sizing: **S** ≤ 2 days · **M** ≈ 3–7 days · **L** ≈ 2–4 weeks of foc
 
 **Problem:** Human/LLM verdicts persist in `FeedbackStore` but never change edges, clusters, or thresholds (review §2.2).
 
-**Status:** Implemented in `FeedbackApplicationService` — verdicts suppress/confirm edges via AQL UPSERT (merge, preserving computed scores), the affected component is re-clustered with in-process union-find, all clustering backends now exclude suppressed edges, and the UI verdict endpoint returns `clusters_changed`. Per-component TTL locking serializes concurrent verdicts. The A–B–C split acceptance test passes.
+**Status:** Implemented in `FeedbackApplicationService` — verdicts suppress/confirm edges via AQL UPSERT (merge, preserving computed scores), the affected component is re-clustered with in-process union-find, all clustering backends now exclude suppressed edges, and the UI verdict endpoint returns `clusters_changed`. Per-component TTL locking serializes concurrent verdicts. **Validated against a real ArangoDB** (`tests/test_feedback_application_integration.py`, `tests/test_clustering_backends_integration.py`), which caught two bugs the in-memory unit fakes missed: (1) the lock collection was named `_er_locks` — ArangoDB rejects leading-underscore user collection names, renamed to `er_locks` (**note for Phase 1: the planned `_er_meta`/`_er_model_params`/`_er_term_frequencies`/`_er_audit_log` names need the same treatment — drop the leading underscore**); (2) the component query used `OPTIONS {uniqueEdges: "global"}` which ArangoDB rejects — replaced with a full active-edge fetch + union-find (also fixes a latent multi-way-split bug where suppressing one edge splits a cluster into two and only one side was rebuilt). The A–B–C split acceptance test passes on real ArangoDB.
 
 **Design:** New `FeedbackApplicationService` in `src/entity_resolution/services/feedback_application_service.py`:
 
@@ -29,7 +29,7 @@ Sizing: **S** ≤ 2 days · **M** ≈ 3–7 days · **L** ≈ 2–4 weeks of foc
   - `match` on a pair below threshold → upsert the edge with `confirmed: true, confirmed_by, confirmed_at`, **keeping the computed score untouched**. Do not overwrite `confidence` with 1.0: artificial 1.0s would distort every consumer of the score distribution — the 2.1 histogram, the 1.2 threshold sweep, and 1.1's EM sampling. The verdict lives in the flag, not the score; clustering honors it via the filter below, and score-distribution/EM consumers exclude verdict-bearing edges from their samples (verdicts enter 1.1/1.2 as *labels*, never as scores).
 - **Edge re-scoring vs verdict preservation:** `SimilarityEdgeService` currently inserts with `overwrite_mode='ignore'` ([similarity_edge_service.py:211](../src/entity_resolution/services/similarity_edge_service.py#L211)) — existing edges are never touched on re-run. That preserves verdict flags for free, but it also means re-scored values (0.2's FS posterior, 1.1's EM-learned parameters) never reach already-persisted edges. Change the upsert to a merge-update that rewrites score/confidence fields while preserving the verdict namespace (`suppressed*`, `confirmed*`); bulk edge rebuilds (truncate + recreate) are forbidden once verdicts exist. Regression test: re-run with changed weights updates edge scores and keeps the flags.
 - `recluster_component(member_key)`: incremental, scoped re-cluster — fetch the affected component via AQL traversal (excluding suppressed edges, including confirmed edges regardless of score), re-run WCC on just that subgraph, rewrite only the affected cluster docs. In every clustering backend's edge query (`clustering_backends/*.py`), add `FILTER edge.suppressed != true` and widen the threshold filter to `edge.score >= @threshold OR edge.confirmed == true` — a confirmed below-threshold edge must cluster; a suppressed above-threshold edge must not.
-- **Concurrency:** verdicts can race each other (two verdicts on the same component) and a running pipeline. Run `apply_verdict` + `recluster_component` inside an ArangoDB stream transaction over the edge and cluster collections, serialized per component via a short-lived lock doc (`_er_locks`, TTL index). Verdicts landing mid-pipeline-run are safe at the edge level because edge writes are merge-upserts; `recluster_component` waits on the lock.
+- **Concurrency:** verdicts can race each other (two verdicts on the same component) and a running pipeline. Run `apply_verdict` + `recluster_component` inside an ArangoDB stream transaction over the edge and cluster collections, serialized per component via a short-lived lock doc (`er_locks`, TTL index). Verdicts landing mid-pipeline-run are safe at the edge level because edge writes are merge-upserts; `recluster_component` waits on the lock.
 - Wire into the UI: `POST /api/review/verdict` ([ui/routes/review.py](../src/entity_resolution/ui/routes/review.py)) calls apply + recluster; response includes `clusters_changed` so the frontend can invalidate React Query caches and show "Cluster #42 split into 2" feedback.
 - Wire `ThresholdOptimizer` output into pipeline config: add `active_learning.auto_apply_thresholds: bool` to `ActiveLearningConfig` ([er_config.py:733](../src/entity_resolution/config/er_config.py#L733)); when set, `ConfigurableERPipeline` calls `optimize()` at run start and records applied thresholds in run stats.
 
@@ -91,11 +91,11 @@ In [llm_verifier.py](../src/entity_resolution/reasoning/llm_verifier.py):
 
 ### 1.0 Schema versioning groundwork (M) — *lands before 1.1*
 
-Pulled forward from Phase 4: Phase 1 introduces the first system collections (`_er_model_params`, `_er_term_frequencies`) and Phase 2 adds `_er_audit_log` — schema versioning must exist before the first of these ships, not "before 4.0".
+Pulled forward from Phase 4: Phase 1 introduces the first system collections (`er_model_params`, `er_term_frequencies`) and Phase 2 adds `er_audit_log` — schema versioning must exist before the first of these ships, not "before 4.0".
 
-- `_er_meta` collection holding the schema version, applied-migration list, and timestamps.
+- `er_meta` collection holding the schema version, applied-migration list, and timestamps.
 - Idempotent migration runner: numbered migration modules, each checks-then-applies; runs automatically at pipeline/UI-server startup with a `--no-migrate` escape hatch; refuses to run against a newer schema than the code knows.
-- First migrations: create `_er_meta` itself, and re-register 0.4's GraphRAG self-loop repair script as migration #001 (no-op where it already ran).
+- First migrations: create `er_meta` itself, and re-register 0.4's GraphRAG self-loop repair script as migration #001 (no-op where it already ran).
 
 ### 1.1 EM parameter estimation for m/u probabilities (L) — *highest-leverage item*
 
@@ -103,8 +103,8 @@ New `src/entity_resolution/learning/em_estimator.py` (new `learning/` package):
 
 - **Input:** sampled comparison vectors. Sample candidate pairs from blocking output (cap ~1M pairs, reservoir sampling), compute per-field agreement levels using existing comparators from `similarity_service`.
 - **Algorithm:** classic FS EM — initialize m/u from current defaults; E-step computes match posteriors; M-step re-estimates per-field/per-level m, u and prior λ; iterate to convergence (tol 1e-5, max 50 iters). Pure numpy; no new heavy deps.
-- **Term-frequency adjustments** (Splink's second pillar): for high-cardinality fields (name, city), scale u-probability by relative value frequency — computed with one AQL `COLLECT ... WITH COUNT` per field, stored in a `_er_term_frequencies` collection at pipeline start.
-- **Integration:** `similarity.estimation: {method: em, sample_size, max_iterations}` in `SimilarityConfig`; `ConfigurableERPipeline` runs estimation between blocking and scoring when enabled; learned parameters persisted to `_er_model_params` (versioned, timestamped, with the config hash) so runs are reproducible and the UI can display them. CLI: `arango-er estimate --config ...`. Learned parameters propagate to already-persisted similarity edges through 0.1's merge-upsert (scores update, verdict flags preserved) — without that change, EM would only affect edges created after estimation.
+- **Term-frequency adjustments** (Splink's second pillar): for high-cardinality fields (name, city), scale u-probability by relative value frequency — computed with one AQL `COLLECT ... WITH COUNT` per field, stored in a `er_term_frequencies` collection at pipeline start.
+- **Integration:** `similarity.estimation: {method: em, sample_size, max_iterations}` in `SimilarityConfig`; `ConfigurableERPipeline` runs estimation between blocking and scoring when enabled; learned parameters persisted to `er_model_params` (versioned, timestamped, with the config hash) so runs are reproducible and the UI can display them. CLI: `arango-er estimate --config ...`. Learned parameters propagate to already-persisted similarity edges through 0.1's merge-upsert (scores update, verdict flags preserved) — without that change, EM would only affect edges created after estimation.
 - Flip default `scoring_method` to `fellegi_sunter` once this lands. **This is a scale change**: the LLM uncertain band (0.55–0.80) and any `ThresholdOptimizer` output were calibrated against the heuristic score, not the posterior. Ship a band-migration step with the flip — re-derive band edges on the posterior scale from accumulated verdicts where they exist, else map the configured edges through the score↔posterior curve. Flipping the default without this silently mis-routes pairs to/away from the LLM.
 
 **Acceptance:** on a synthetic dataset with known m/u, EM recovers parameters within tolerance; on Febrl/WDC test data, F1 with learned parameters ≥ F1 with hand-tuned defaults.
@@ -155,7 +155,7 @@ On `ClusterDetailPage`/`ClusterGraph`:
 - **Remove member** (select node → "doesn't belong") → suppress its edges via 0.1, re-cluster component.
 - **Merge clusters** (from cluster list multi-select or detail page) → create confirmed edge between exemplars.
 - **Split cluster** → UI surfaces the weakest-edge suggestion from 1.3; user confirms or drag-selects a partition.
-- Every action writes an `_er_audit_log` doc `{actor, action, before, after, timestamp}`; new "History" tab on cluster detail renders it. Backend: new `ui/routes/curation.py`.
+- Every action writes an `er_audit_log` doc `{actor, action, before, after, timestamp}`; new "History" tab on cluster detail renders it. Backend: new `ui/routes/curation.py`.
 - Review-repair queue: clusters flagged by 1.3 appear in the Review page as a second tab ("Suspect clusters") beside the pair queue.
 
 ### 2.3 Review workflow depth (M)
@@ -230,7 +230,7 @@ Productize `Node2VecEmbeddingService` as a real blocking strategy: embeddings wr
 0.3 golden records ─┼─→ 0.7, 2.3 review workflow (golden record apply)
 0.5 LLM hardening ──┘
 0.1 merge-upsert ──→ 1.1 (learned params reach existing edges)
-1.0 schema versioning ──→ 1.1 (_er_model_params, _er_term_frequencies), 2.2 (_er_audit_log)
+1.0 schema versioning ──→ 1.1 (er_model_params, er_term_frequencies), 2.2 (er_audit_log)
 1.2 evaluation ──→ 2.1 threshold tuner, 1.3 cluster repair ──→ 2.2 repair queue
 1.4 profiler ──→ 2.4 profiling screen
 0.1 + 1.1 ──→ 3.3 incremental maintenance

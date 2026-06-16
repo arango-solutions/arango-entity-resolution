@@ -22,7 +22,7 @@ including confirmed edges) via in-process union-find, and rewrites only the
 cluster documents that contained the affected vertices.
 
 Concurrency: ``apply_and_recluster`` serializes per-component work with a
-short-lived lock document (TTL-indexed ``_er_locks``) so two verdicts on the
+short-lived lock document (TTL-indexed ``er_locks``) so two verdicts on the
 same component — or a verdict landing mid-pipeline — cannot interleave their
 re-cluster writes.
 """
@@ -40,7 +40,9 @@ from ..utils.graph_utils import extract_key_from_vertex_id, format_vertex_id
 
 logger = logging.getLogger(__name__)
 
-_LOCK_COLLECTION = "_er_locks"
+# ArangoDB reserves leading-underscore names for system collections and rejects
+# them for user collections, so this is "er_locks" (not "_er_locks").
+_LOCK_COLLECTION = "er_locks"
 _LOCK_TTL_SECONDS = 60
 
 
@@ -157,30 +159,30 @@ class FeedbackApplicationService:
     # Scoped re-clustering
     # ------------------------------------------------------------------
 
-    def _fetch_component_edges(self, start_vid: str) -> List[Tuple[str, str]]:
-        """Edges of the connected component containing ``start_vid``.
+    def _fetch_active_edges(self) -> List[Tuple[str, str]]:
+        """All non-suppressed edges (confirmed edges included regardless of score).
 
-        Excludes suppressed edges; includes confirmed edges regardless of
-        score. Uses a path-filtered ANY traversal so suppressed edges do not
-        bridge components.
+        Fetching the full active edge set and running the same union-find the
+        clustering backends use guarantees the scoped re-cluster of a component
+        is identical to a full re-run for that component — no AQL-traversal edge
+        cases. Filtering to the seed's component happens in
+        :meth:`_component_of`.
         """
         cursor = self.db.aql.execute(
-            """
-            FOR v, e, p IN 0..999999 ANY @start @@edges
-                OPTIONS { uniqueEdges: "global", bfs: true }
-                FILTER e != null
-                FILTER p.edges[*].suppressed ALL != true
-                RETURN DISTINCT { from: e._from, to: e._to }
-            """,
-            bind_vars={"start": start_vid, "@edges": self.edge_collection},
+            "FOR e IN @@edges FILTER e.suppressed != true RETURN { from: e._from, to: e._to }",
+            bind_vars={"@edges": self.edge_collection},
         )
         return [(row["from"], row["to"]) for row in cursor]
 
     @staticmethod
-    def _connected_components(
-        edges: List[Tuple[str, str]], seed: str
-    ) -> List[List[str]]:
-        """Union-find over an edge list; returns components as key lists."""
+    def _cluster_key(member_keys: List[str]) -> str:
+        """Stable, content-addressed cluster key (order-independent)."""
+        joined = "|".join(sorted(member_keys))
+        return "c_" + hashlib.md5(joined.encode("utf-8")).hexdigest()[:24]
+
+    @staticmethod
+    def _union_find(edges: List[Tuple[str, str]]) -> Dict[str, str]:
+        """Return vid -> root for every vertex appearing in *edges*."""
         parent: Dict[str, str] = {}
 
         def find(x: str) -> str:
@@ -197,41 +199,57 @@ class FeedbackApplicationService:
 
         for a, b in edges:
             union(a, b)
+        return {vid: find(vid) for vid in parent}
 
-        # The seed vertex may have become isolated (all its edges suppressed).
-        find(seed)
+    def recluster_component(self, *member_keys: str, auto_refresh: bool = False) -> Dict[str, Any]:
+        """Recompute clusters for the component(s) touching ``member_keys``.
 
-        groups: Dict[str, List[str]] = defaultdict(list)
-        for vid in parent:
-            key = extract_key_from_vertex_id(vid)
-            if key:
-                groups[find(vid)].append(key)
-        return [sorted(members) for members in groups.values()]
-
-    @staticmethod
-    def _cluster_key(member_keys: List[str]) -> str:
-        """Stable, content-addressed cluster key (order-independent)."""
-        joined = "|".join(sorted(member_keys))
-        return "c_" + hashlib.md5(joined.encode("utf-8")).hexdigest()[:24]
-
-    def recluster_component(self, member_key: str, *, auto_refresh: bool = False) -> Dict[str, Any]:
-        """Recompute clusters for the component containing ``member_key``.
-
-        Rewrites only the cluster documents that referenced any vertex in the
-        affected component; all other clusters are left untouched. When a
+        Seeds from one or more entity keys (typically both endpoints of the
+        verdict edge, since suppressing an edge can split one cluster into two
+        non-trivial clusters). Rewrites only the cluster documents that
+        referenced any affected vertex; all other clusters are untouched. When a
         ``golden_collection`` is configured, golden records whose source cluster
         no longer exists are flagged stale (and deleted when ``auto_refresh``).
         """
-        start_vid = self._vid(member_key)
-        edges = self._fetch_component_edges(start_vid)
-        components = self._connected_components(edges, start_vid)
+        seeds = [k for k in member_keys if k]
+        edges = self._fetch_active_edges()
+        roots = self._union_find(edges)
 
-        # Every entity key now touched by the recompute.
-        touched_keys = {k for comp in components for k in comp}
-        touched_keys.add(member_key)
+        coll = self.db.collection(self.cluster_collection)
 
-        # Find existing cluster docs that referenced any touched key; we replace
-        # exactly those, keyed by content hash so re-runs are idempotent.
+        # Old clusters that referenced any seed — their members are all affected
+        # (a split moves some of them into a different component).
+        seed_docs = list(self.db.aql.execute(
+            """
+            FOR c IN @@clusters
+                FILTER LENGTH(INTERSECTION(c.member_keys, @seeds)) > 0
+                RETURN c
+            """,
+            bind_vars={"@clusters": self.cluster_collection, "seeds": seeds},
+        ))
+        affected_keys = set(seeds)
+        for d in seed_docs:
+            affected_keys.update(d.get("member_keys", []))
+
+        # Recompute the full component for every affected vertex, keyed by
+        # union-find root. Pull in every vertex sharing a root with an affected
+        # vertex (a confirm can attach vertices never in the seed's old
+        # clusters); isolated affected vertices have no root and become
+        # singletons that drop out below.
+        affected_roots = {roots[self._vid(k)] for k in affected_keys if self._vid(k) in roots}
+        comp_by_root: Dict[str, set] = defaultdict(set)
+        for vid, root in roots.items():
+            if root in affected_roots:
+                key = extract_key_from_vertex_id(vid)
+                if key:
+                    comp_by_root[root].add(key)
+
+        new_components = [sorted(members) for members in comp_by_root.values()]
+        touched_keys = set(affected_keys)
+        for comp in new_components:
+            touched_keys.update(comp)
+
+        # All old clusters intersecting the touched set are replaced.
         old_docs = list(self.db.aql.execute(
             """
             FOR c IN @@clusters
@@ -245,7 +263,7 @@ class FeedbackApplicationService:
         # Singletons (entities whose every edge was suppressed) are not stored
         # as clusters — they drop out, matching the pipeline's min_cluster_size.
         new_docs = []
-        for comp in components:
+        for comp in new_components:
             if len(comp) < 2:
                 continue
             ck = self._cluster_key(comp)
@@ -385,7 +403,9 @@ class FeedbackApplicationService:
             )
         try:
             verdict = self.apply_verdict(key_a, key_b, decision, actor=actor, score=score)
-            recluster = self.recluster_component(key_a, auto_refresh=auto_refresh)
+            # Seed from BOTH endpoints: suppressing an edge can split one cluster
+            # into two, and each side must be re-clustered.
+            recluster = self.recluster_component(key_a, key_b, auto_refresh=auto_refresh)
             return {"verdict": verdict, "recluster": recluster}
         finally:
             self._release_lock(lock_key)
