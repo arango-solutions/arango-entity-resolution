@@ -158,6 +158,11 @@ class ConfigurableERPipeline:
         self.logger.info(f"Collection: {self.config.collection_name}")
         self.logger.info("")
 
+        # Phase 0a: apply pending schema migrations (idempotent). Disable with
+        # ER_NO_MIGRATE=1. Best-effort — a migration failure is logged but does
+        # not abort the run.
+        self._maybe_migrate_schema(results)
+
         # Optional phase 0: resolve embedding runtime/provider from config.
         if self.config.embedding:
             if on_progress:
@@ -309,6 +314,32 @@ class ConfigurableERPipeline:
             })
         
         return results
+
+    def _maybe_migrate_schema(self, results: Dict[str, Any]) -> None:
+        """Apply pending ER schema migrations at startup unless disabled.
+
+        Controlled by the ``ER_NO_MIGRATE`` environment variable. Failures are
+        logged and recorded in ``results['schema']`` but never abort the run.
+        """
+        import os
+
+        if os.getenv("ER_NO_MIGRATE", "").strip() in ("1", "true", "True"):
+            results['schema'] = {"migrated": False, "reason": "disabled via ER_NO_MIGRATE"}
+            return
+        try:
+            from ..migrations import MigrationRunner
+
+            runner = MigrationRunner(self.db)
+            outcome = runner.migrate()
+            results['schema'] = outcome
+            if outcome["applied"]:
+                self.logger.info(
+                    "Applied schema migrations %s (now v%s)",
+                    outcome["applied"], outcome["to_version"],
+                )
+        except Exception as exc:  # never block the pipeline on migration issues
+            self.logger.warning("Schema migration skipped: %s", exc)
+            results['schema'] = {"migrated": False, "error": str(exc)}
 
     def _setup_embedding_runtime(self) -> Dict[str, Any]:
         """

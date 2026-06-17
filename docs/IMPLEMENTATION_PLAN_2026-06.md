@@ -89,13 +89,16 @@ In [llm_verifier.py](../src/entity_resolution/reasoning/llm_verifier.py):
 
 ## Phase 1 — A Matching Core That Learns (target: v3.7.0)
 
-### 1.0 Schema versioning groundwork (M) — *lands before 1.1*
+### 1.0 Schema versioning groundwork (M) — *lands before 1.1* — ✅ DONE
 
 Pulled forward from Phase 4: Phase 1 introduces the first system collections (`er_model_params`, `er_term_frequencies`) and Phase 2 adds `er_audit_log` — schema versioning must exist before the first of these ships, not "before 4.0".
 
+**Status:** Implemented in `src/entity_resolution/migrations/` — `Migration` dataclass, `MigrationRunner` (tracks version in the `er_meta` singleton doc, applies pending migrations in id order, persists after each for crash-safe resume, refuses to run when the DB schema is newer than the code), and a `MIGRATIONS` registry seeded with a v3.6 baseline. `arango-er migrate [--status] [--target N]` CLI command; `ConfigurableERPipeline` auto-migrates at startup unless `ER_NO_MIGRATE=1` (best-effort, never aborts the run). Validated on real ArangoDB (`tests/test_migrations_integration.py`) plus unit tests including partial-failure resume.
+
+**Design note:** the GraphRAG self-loop repair stays a standalone parameterized script (`scripts/migrations/001_fix_graphrag_self_loop_edges.py`), *not* an auto-run migration — it needs deployment-specific collection names and is a one-off data repair, whereas the migration runner is for ER-owned schema (collections/indexes) that can be created without parameters.
+
 - `er_meta` collection holding the schema version, applied-migration list, and timestamps.
 - Idempotent migration runner: numbered migration modules, each checks-then-applies; runs automatically at pipeline/UI-server startup with a `--no-migrate` escape hatch; refuses to run against a newer schema than the code knows.
-- First migrations: create `er_meta` itself, and re-register 0.4's GraphRAG self-loop repair script as migration #001 (no-op where it already ran).
 
 ### 1.1 EM parameter estimation for m/u probabilities (L) — *highest-leverage item*
 

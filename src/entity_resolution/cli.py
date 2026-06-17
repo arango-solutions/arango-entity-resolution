@@ -1209,6 +1209,38 @@ def canonicalize(input_path, config_path, output_dir, header, delimiter, hub_thr
         sys.exit(1)
 
 
+@main.command("migrate")
+@click.option(
+    "--status",
+    "status_only",
+    is_flag=True,
+    help="Show current/pending schema version without applying anything.",
+)
+@click.option(
+    "--target",
+    type=int,
+    default=None,
+    help="Apply migrations only up to this version (default: latest).",
+)
+@connection_options
+def migrate(status_only, target, database, host, port, username, password):
+    """Apply pending ER schema migrations (or show status with --status)."""
+    try:
+        from entity_resolution.migrations import MigrationRunner
+
+        db = _get_db_from_options(database, host, port, username, password)
+        runner = MigrationRunner(db)
+        if status_only:
+            _emit_json(runner.status())
+            return
+        result = runner.migrate(target=target)
+        click.echo(click.style("\nSchema migration complete!", fg="green", bold=True))
+        _emit_json(result)
+    except Exception as e:
+        click.echo(click.style(f"Error: {e}", fg="red"), err=True)
+        sys.exit(1)
+
+
 @main.command("address-resolve")
 @connection_options
 @click.option("--collection", "-c", required=True, help="Address collection name.")
