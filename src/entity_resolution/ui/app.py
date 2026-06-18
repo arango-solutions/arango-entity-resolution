@@ -19,6 +19,7 @@ from .routes import (
     config,
     export,
     golden,
+    metrics,
     pipeline,
     resolve,
     review,
@@ -135,6 +136,7 @@ def create_app(
     app.include_router(config.router)
     app.include_router(resolve.router)
     app.include_router(export.router)
+    app.include_router(metrics.router)
     app.include_router(ws.router)
 
     if _STATIC_DIR.is_dir():
