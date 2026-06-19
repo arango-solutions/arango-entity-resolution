@@ -26,11 +26,30 @@ def _baseline(db: Any) -> None:
     return None
 
 
+def _create_collection(name: str):
+    def apply(db) -> None:
+        if not db.has_collection(name):
+            db.create_collection(name)
+    return apply
+
+
 MIGRATIONS: List[Migration] = [
     Migration(
         id=1,
         name="baseline_v3_6",
         description="Establish schema-version baseline (no schema objects to create).",
         apply=_baseline,
+    ),
+    Migration(
+        id=2,
+        name="create_er_model_params",
+        description="Collection for EM-learned m/u/lambda model parameters (plan 1.1).",
+        apply=_create_collection("er_model_params"),
+    ),
+    Migration(
+        id=3,
+        name="create_er_term_frequencies",
+        description="Collection for per-field term-frequency tables (plan 1.1).",
+        apply=_create_collection("er_term_frequencies"),
     ),
 ]

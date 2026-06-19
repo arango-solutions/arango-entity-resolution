@@ -661,29 +661,33 @@ class ConfigurableERPipeline:
         return self.config.blocking.parse_fields()
 
     
-    def run_similarity(self, candidate_pairs: list) -> list:
-        """Run similarity phase based on configuration."""
-        if not candidate_pairs:
-            return []
-
-        # Derive field weights: use configured weights, or fall back to equal
-        # weights across every blocking field so BatchSimilarityService does not
-        # reject an empty dict.
+    def _effective_field_weights(self) -> Dict[str, float]:
+        """Configured field weights, or equal weights across blocking fields."""
         field_weights = self.config.similarity.field_weights
         if not field_weights:
             blocking_field_names, _ = self.config.blocking.parse_fields()
             if blocking_field_names:
                 weight = 1.0 / len(blocking_field_names)
                 field_weights = {f: weight for f in blocking_field_names}
+        return field_weights
 
-        similarity_service = BatchSimilarityService(
+    def build_similarity_service(self) -> BatchSimilarityService:
+        """Construct the BatchSimilarityService from config (shared by run + estimate)."""
+        return BatchSimilarityService(
             db=self.db,
             collection=self.config.collection_name,
-            field_weights=field_weights,
+            field_weights=self._effective_field_weights(),
             similarity_algorithm=self.config.similarity.algorithm,
             batch_size=self.config.similarity.batch_size,
             field_transformers=getattr(self.config.similarity, "transformers", {}),
         )
+
+    def run_similarity(self, candidate_pairs: list) -> list:
+        """Run similarity phase based on configuration."""
+        if not candidate_pairs:
+            return []
+
+        similarity_service = self.build_similarity_service()
 
         # BatchSimilarityService.compute_similarities expects (key1, key2) tuples;
         # blocking strategies return rich dicts — normalise at the boundary.

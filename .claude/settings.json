@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(PYTHON_BIN=.venv/bin/python bash scripts/run_tests_with_temp_arango.sh tests/test_model_parameter_estimator_integration.py -v)",
+      "Bash(git commit -q -m 'feat\\(learning\\): EM parameter estimation end-to-end — estimate + persist \\(plan 1.1A\\) *)"
+    ]
+  }
+}

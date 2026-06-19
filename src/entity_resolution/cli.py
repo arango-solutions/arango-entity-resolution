@@ -1209,6 +1209,42 @@ def canonicalize(input_path, config_path, output_dir, header, delimiter, hub_thr
         sys.exit(1)
 
 
+@main.command("estimate")
+@click.option('--config', '-c', type=click.Path(exists=True), required=True, help='Pipeline YAML/JSON config.')
+@click.option('--sample-size', type=int, default=100_000, show_default=True, help='Candidate pairs to sample for EM.')
+@click.option('--max-iterations', type=int, default=50, show_default=True, help='Max EM iterations.')
+@click.option('--no-term-frequencies', is_flag=True, help='Skip term-frequency table computation.')
+@connection_options
+def estimate(config, sample_size, max_iterations, no_term_frequencies, database, host, port, username, password):
+    """Estimate Fellegi-Sunter m/u parameters via EM and persist them."""
+    try:
+        from entity_resolution.learning import ModelParameterEstimator
+
+        db = _get_db_from_options(database, host, port, username, password)
+        pipeline = ConfigurableERPipeline(db=db, config_path=config)
+        sim_service = pipeline.build_similarity_service()
+        field_names = list(pipeline._effective_field_weights().keys())
+        if not field_names:
+            raise click.ClickException("No similarity fields configured; cannot estimate parameters.")
+
+        estimator = ModelParameterEstimator(
+            db=db,
+            similarity_service=sim_service,
+            edge_collection=pipeline.config.edge_collection,
+            field_names=field_names,
+        )
+        result = estimator.run(
+            source_collection=pipeline.config.collection_name,
+            sample_size=sample_size,
+            with_term_frequencies=not no_term_frequencies,
+        )
+        click.echo(click.style("\nParameter estimation complete!", fg="green", bold=True))
+        _emit_json(result)
+    except Exception as e:
+        click.echo(click.style(f"Error: {e}", fg="red"), err=True)
+        sys.exit(1)
+
+
 @main.command("migrate")
 @click.option(
     "--status",
