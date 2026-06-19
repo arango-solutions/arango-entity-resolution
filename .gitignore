@@ -141,3 +141,6 @@ artifacts/
 coverage.json
 COVERAGE_SUMMARY.txt
 detailed_coverage_analysis_*.json
+
+# Local Claude Code harness config (per-user, not project-shared)
+.claude/
