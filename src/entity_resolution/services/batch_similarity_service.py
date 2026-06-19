@@ -69,7 +69,9 @@ class BatchSimilarityService:
         batch_size: int = DEFAULT_BATCH_SIZE,
         normalization_config: Optional[Dict[str, Any]] = None,
         field_transformers: Optional[Dict[str, Any]] = None,
-        progress_callback: Optional[Callable[[int, int], None]] = None
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        scoring_method: str = "weighted_heuristic",
+        fs_scorer: Optional[Any] = None,
     ):
         """
         Initialize batch similarity service.
@@ -135,7 +137,18 @@ class BatchSimilarityService:
             field_transformers=self.field_transformers,
         )
         self.algorithm_name = similarity_algorithm if isinstance(similarity_algorithm, str) else "custom"
-        
+
+        # Scoring method: "weighted_heuristic" (default, weighted 0-1 average) or
+        # "fellegi_sunter" (calibrated posterior from learned m/u via fs_scorer).
+        if scoring_method not in ("weighted_heuristic", "fellegi_sunter"):
+            raise ValueError(
+                f"scoring_method must be 'weighted_heuristic' or 'fellegi_sunter', got {scoring_method!r}"
+            )
+        if scoring_method == "fellegi_sunter" and fs_scorer is None:
+            raise ValueError("scoring_method='fellegi_sunter' requires an fs_scorer")
+        self.scoring_method = scoring_method
+        self.fs_scorer = fs_scorer
+
         # Statistics tracking
         self._stats = {
             'pairs_processed': 0,
@@ -199,10 +212,10 @@ class BatchSimilarityService:
             
             if not doc1 or not doc2:
                 continue
-            
-            # Compute weighted similarity
-            score = self._compute_weighted_similarity(doc1, doc2)
-            
+
+            # Compute the pair score under the configured method.
+            score = self._score_pair(doc1, doc2)
+
             if return_all or score >= threshold:
                 matches.append((doc1_key, doc2_key, score))
         
@@ -366,6 +379,17 @@ class BatchSimilarityService:
         
         return doc_cache
     
+    def _score_pair(self, doc1: Dict[str, Any], doc2: Dict[str, Any]) -> float:
+        """Score a pair under the configured method.
+
+        ``weighted_heuristic`` returns the weighted 0-1 average; ``fellegi_sunter``
+        returns the calibrated posterior from learned m/u over per-field scores.
+        """
+        if self.scoring_method == "fellegi_sunter":
+            field_scores, _ = self._compute_detailed_similarity(doc1, doc2)
+            return self.fs_scorer.score(field_scores)
+        return self._compute_weighted_similarity(doc1, doc2)
+
     def _compute_weighted_similarity(self, doc1: Dict[str, Any], doc2: Dict[str, Any]) -> float:
         """
         Compute weighted similarity between two documents.

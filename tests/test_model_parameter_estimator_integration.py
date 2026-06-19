@@ -76,3 +76,40 @@ def test_estimate_persist_and_term_frequencies(estimation_fixture):
     tf = db.collection("er_term_frequencies").get("city")
     assert tf is not None
     assert tf["top_values"][0]["value"] == "Boston"
+
+
+def test_learned_params_drive_fs_scoring_and_separate_classes(estimation_fixture):
+    """End-to-end: estimate m/u, score with FS, and verify it separates the classes."""
+    db, vcol, ecol = estimation_fixture
+    sim = BatchSimilarityService(
+        db=db, collection=vcol,
+        field_weights={"name": 0.6, "city": 0.4},
+        similarity_algorithm="jaro_winkler",
+    )
+    estimator = ModelParameterEstimator(
+        db=db, similarity_service=sim, edge_collection=ecol,
+        field_names=["name", "city"], default_threshold=0.7,
+    )
+    estimator.run(source_collection=vcol, sample_size=100)
+
+    # Build an FS-scoring similarity service from the learned params.
+    from entity_resolution.learning.fellegi_sunter_scorer import FellegiSunterScorer
+
+    doc = estimator.load_latest()
+    fs_scorer = FellegiSunterScorer.from_model_doc(doc)
+    fs_sim = BatchSimilarityService(
+        db=db, collection=vcol,
+        field_weights={"name": 0.6, "city": 0.4},
+        similarity_algorithm="jaro_winkler",
+        scoring_method="fellegi_sunter",
+        fs_scorer=fs_scorer,
+    )
+
+    match_scores = fs_sim.compute_similarities([("m0a", "m0b")], threshold=0.0, return_all=True)
+    non_scores = fs_sim.compute_similarities([("x0a", "x0b")], threshold=0.0, return_all=True)
+
+    # FS posterior should be high for the match pair, low for the non-match.
+    assert match_scores[0][2] > 0.9
+    assert non_scores[0][2] < 0.1
+    # And the posteriors are valid probabilities.
+    assert 0.0 <= non_scores[0][2] < match_scores[0][2] <= 1.0

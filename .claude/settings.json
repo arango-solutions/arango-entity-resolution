@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(PYTHON_BIN=.venv/bin/python bash scripts/run_tests_with_temp_arango.sh tests/test_model_parameter_estimator_integration.py -v)",
-      "Bash(git commit -q -m 'feat\\(learning\\): EM parameter estimation end-to-end — estimate + persist \\(plan 1.1A\\) *)"
+      "Bash(git commit -q -m 'feat\\(learning\\): EM parameter estimation end-to-end — estimate + persist \\(plan 1.1A\\) *)",
+      "Bash(.venv/bin/python -m pytest tests/test_fellegi_sunter_scorer.py -q)",
+      "Bash(git commit -q -m 'feat\\(scoring\\): consume EM-learned m/u via FS scorer in active path \\(plan 1.1B\\) *)"
     ]
   }
 }

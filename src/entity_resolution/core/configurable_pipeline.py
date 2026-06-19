@@ -672,7 +672,24 @@ class ConfigurableERPipeline:
         return field_weights
 
     def build_similarity_service(self) -> BatchSimilarityService:
-        """Construct the BatchSimilarityService from config (shared by run + estimate)."""
+        """Construct the BatchSimilarityService from config (shared by run + estimate).
+
+        When ``similarity.scoring_method == 'fellegi_sunter'``, loads the latest
+        EM-learned m/u from ``er_model_params`` and builds an FS scorer; falls
+        back to the weighted heuristic (with a warning) if no model exists yet.
+        """
+        scoring_method = getattr(self.config.similarity, "scoring_method", "weighted_heuristic")
+        fs_scorer = None
+        if scoring_method == "fellegi_sunter":
+            fs_scorer = self._load_fs_scorer()
+            if fs_scorer is None:
+                self.logger.warning(
+                    "scoring_method='fellegi_sunter' but no model parameters found in "
+                    "er_model_params; run `arango-er estimate` first. Falling back to "
+                    "weighted_heuristic for this run."
+                )
+                scoring_method = "weighted_heuristic"
+
         return BatchSimilarityService(
             db=self.db,
             collection=self.config.collection_name,
@@ -680,6 +697,29 @@ class ConfigurableERPipeline:
             similarity_algorithm=self.config.similarity.algorithm,
             batch_size=self.config.similarity.batch_size,
             field_transformers=getattr(self.config.similarity, "transformers", {}),
+            scoring_method=scoring_method,
+            fs_scorer=fs_scorer,
+        )
+
+    def _load_fs_scorer(self):
+        """Build a FellegiSunterScorer from the latest persisted model params."""
+        from ..learning import ModelParameterEstimator
+        from ..learning.fellegi_sunter_scorer import FellegiSunterScorer
+
+        field_names = list(self._effective_field_weights().keys())
+        estimator = ModelParameterEstimator(
+            db=self.db,
+            similarity_service=None,  # not needed for load_latest
+            edge_collection=self.config.edge_collection,
+            field_names=field_names,
+        )
+        doc = estimator.load_latest()
+        if not doc:
+            return None
+        cfg = self.config.similarity
+        return FellegiSunterScorer.from_model_doc(
+            doc,
+            match_prior=getattr(cfg, "match_prior", None),
         )
 
     def run_similarity(self, candidate_pairs: list) -> list:

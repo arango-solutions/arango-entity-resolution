@@ -184,10 +184,13 @@ class SimilarityConfig:
         batch_size: int = DEFAULT_BATCH_SIZE,
         field_weights: Optional[Dict[str, float]] = None,
         transformers: Optional[Dict[str, Any]] = None,
+        scoring_method: str = "weighted_heuristic",
+        match_prior: Optional[float] = None,
+        agreement_thresholds: Optional[Dict[str, float]] = None,
     ):
         """
         Initialize similarity configuration.
-        
+
         Args:
             algorithm: Similarity algorithm ("jaro_winkler", "levenshtein", "jaccard")
             threshold: Minimum similarity threshold (0.0-1.0). Default DEFAULT_SIMILARITY_THRESHOLD (0.75).
@@ -195,13 +198,28 @@ class SimilarityConfig:
             field_weights: Dictionary of field names to weights
             transformers: Optional per-field transformer registry applied before
                 similarity scoring.
+            scoring_method: "weighted_heuristic" (default, weighted 0-1 average) or
+                "fellegi_sunter" (calibrated posterior from EM-learned m/u in
+                er_model_params). FS requires that estimation has been run.
+            match_prior: Optional prior P(match) for the FS posterior; defaults to
+                the learned lambda when None.
+            agreement_thresholds: Optional per-field similarity thresholds for the
+                FS agree/disagree decision (falls back to the model's stored
+                thresholds, then 0.85).
         """
+        if scoring_method not in ("weighted_heuristic", "fellegi_sunter"):
+            raise ValueError(
+                f"scoring_method must be 'weighted_heuristic' or 'fellegi_sunter', got {scoring_method!r}"
+            )
         self.algorithm = algorithm
         self.threshold = threshold
         self.batch_size = batch_size
         self.field_weights = field_weights or {}
         self.transformers = transformers or {}
-    
+        self.scoring_method = scoring_method
+        self.match_prior = match_prior
+        self.agreement_thresholds = agreement_thresholds or {}
+
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'SimilarityConfig':
         """Create from dictionary."""
@@ -210,9 +228,12 @@ class SimilarityConfig:
             threshold=config_dict.get('threshold', DEFAULT_SIMILARITY_THRESHOLD),
             batch_size=config_dict.get('batch_size', DEFAULT_BATCH_SIZE),
             field_weights=config_dict.get('field_weights', {}),
-            transformers=config_dict.get('transformers', {})
+            transformers=config_dict.get('transformers', {}),
+            scoring_method=config_dict.get('scoring_method', 'weighted_heuristic'),
+            match_prior=config_dict.get('match_prior'),
+            agreement_thresholds=config_dict.get('agreement_thresholds', {}),
         )
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -221,6 +242,9 @@ class SimilarityConfig:
             'batch_size': self.batch_size,
             'field_weights': self.field_weights,
             'transformers': self.transformers,
+            'scoring_method': self.scoring_method,
+            'match_prior': self.match_prior,
+            'agreement_thresholds': self.agreement_thresholds,
         }
 
 

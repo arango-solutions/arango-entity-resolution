@@ -100,7 +100,11 @@ Pulled forward from Phase 4: Phase 1 introduces the first system collections (`e
 - `er_meta` collection holding the schema version, applied-migration list, and timestamps.
 - Idempotent migration runner: numbered migration modules, each checks-then-applies; runs automatically at pipeline/UI-server startup with a `--no-migrate` escape hatch; refuses to run against a newer schema than the code knows.
 
-### 1.1 EM parameter estimation for m/u probabilities (L) — *highest-leverage item*
+### 1.1 EM parameter estimation for m/u probabilities (L) — *highest-leverage item* — ✅ DONE
+
+**Status:** Implemented in `entity_resolution.learning`. `estimate_mu` (pure-numpy FS EM) recovers known m/u/λ from synthetic data; `ModelParameterEstimator` samples real candidate pairs, recomputes per-field agreement via the comparators, runs EM, computes term-frequency tables, and persists to `er_model_params` (versioned + config-hashed) / `er_term_frequencies`. `FellegiSunterScorer` consumes the learned params; `BatchSimilarityService` gains a `scoring_method` (`weighted_heuristic` default | `fellegi_sunter`), and `ConfigurableERPipeline.build_similarity_service()` loads the latest model and builds the FS scorer when configured (falling back to the heuristic with a warning if no model exists). CLI: `arango-er estimate --config`. Validated on real ArangoDB end-to-end (estimate → FS scoring cleanly separates match/non-match posteriors).
+
+**Default left as `weighted_heuristic`** (not flipped): the FS posterior is on a different scale than the weighted score, so the LLM uncertain band (0.55–0.80) and `ThresholdOptimizer` output would mis-route under FS. Flipping the default still needs the band-migration step below + the 1.2 harness to pick posterior-scale thresholds; until then `fellegi_sunter` is opt-in per config. **Remaining for a future increment:** re-score already-persisted edges through 0.1's merge-upsert when params change (currently new edges only), and the automatic band migration.
 
 New `src/entity_resolution/learning/em_estimator.py` (new `learning/` package):
 
