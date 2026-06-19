@@ -357,6 +357,7 @@ class ClusteringConfig:
         auto_select_threshold_edges: int = 2_000_000,
         sparse_backend_enabled: bool = True,
         gae: Optional[GAEClusteringConfig] = None,
+        repair: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize clustering configuration.
@@ -373,6 +374,9 @@ class ClusteringConfig:
             sparse_backend_enabled: Whether ``auto`` backend may select
                 ``python_sparse``. Default True.
             gae: Optional GAE clustering configuration.
+            repair: Optional cluster-repair settings (plan 1.3):
+                ``{enabled: bool, min_coherence: float, auto_split: bool}``.
+                Defaults to disabled. Consumed by ClusterRepairService.
         """
         import warnings
 
@@ -382,6 +386,12 @@ class ClusteringConfig:
         self.auto_select_threshold_edges = auto_select_threshold_edges
         self.sparse_backend_enabled = sparse_backend_enabled
         self.gae = gae
+        self.repair = {
+            "enabled": False,
+            "min_coherence": 0.5,
+            "auto_split": False,
+            **(repair or {}),
+        }
 
         if wcc_algorithm is not None:
             warnings.warn(
@@ -413,6 +423,7 @@ class ClusteringConfig:
             auto_select_threshold_edges=config_dict.get('auto_select_threshold_edges', 2_000_000),
             sparse_backend_enabled=config_dict.get('sparse_backend_enabled', True),
             gae=gae,
+            repair=config_dict.get('repair'),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -429,6 +440,8 @@ class ClusteringConfig:
             result['sparse_backend_enabled'] = self.sparse_backend_enabled
         if self.gae is not None:
             result['gae'] = self.gae.to_dict()
+        if self.repair.get("enabled"):
+            result['repair'] = self.repair
         return result
 
     def validate(self) -> List[str]:

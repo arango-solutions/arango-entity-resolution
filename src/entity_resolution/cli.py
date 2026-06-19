@@ -1245,6 +1245,34 @@ def estimate(config, sample_size, max_iterations, no_term_frequencies, database,
         sys.exit(1)
 
 
+@main.command("repair-clusters")
+@click.option("--collection", required=True, help="Source (vertex) collection name.")
+@click.option("--edge-collection", default="similarTo", show_default=True, help="Similarity edge collection.")
+@click.option("--cluster-collection", help="Cluster collection (default: <collection>_clusters).")
+@click.option("--min-coherence", type=float, default=0.5, show_default=True, help="Mean intra-cluster score below which a cluster is flagged.")
+@click.option("--auto-split/--queue-only", default=False, help="Auto-split safe bridges (else queue all flagged clusters).")
+@connection_options
+def repair_clusters(collection, edge_collection, cluster_collection, min_coherence, auto_split, database, host, port, username, password):
+    """Flag low-coherence clusters and split bridge-joined ones (plan 1.3)."""
+    try:
+        from entity_resolution.services.cluster_repair_service import ClusterRepairService
+
+        db = _get_db_from_options(database, host, port, username, password)
+        service = ClusterRepairService(
+            db=db,
+            edge_collection=edge_collection,
+            vertex_collection=collection,
+            cluster_collection=cluster_collection or f"{collection}_clusters",
+            min_coherence=min_coherence,
+        )
+        result = service.repair(auto_split=auto_split)
+        click.echo(click.style("\nCluster repair complete!", fg="green", bold=True))
+        _emit_json(result)
+    except Exception as e:
+        click.echo(click.style(f"Error: {e}", fg="red"), err=True)
+        sys.exit(1)
+
+
 @main.command("migrate")
 @click.option(
     "--status",

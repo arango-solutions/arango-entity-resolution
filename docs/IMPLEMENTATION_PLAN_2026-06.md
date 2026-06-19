@@ -125,7 +125,9 @@ Extend [ab_evaluation_harness.py](../src/entity_resolution/services/ab_evaluatio
 - **Benchmark runner:** `scripts/benchmarks/run_public_benchmarks.py`. Match benchmarks to the system's primary domain: Febrl-style synthetic person data and OpenSanctions Pairs (person/org) are the headline numbers; WDC Products (hard splits) as a secondary cross-domain check — it's e-commerce product matching, which exercises none of the person/address comparators or phonetics. Results committed to `docs/benchmarks/` per release. This is also the marketing artifact.
 - New API route `ui/routes/metrics.py`: `GET /api/metrics/threshold-sweep`, `GET /api/metrics/cluster-quality`.
 
-### 1.3 Cluster repair (M)
+### 1.3 Cluster repair (M) — ✅ DONE
+
+**Status:** `ClusterRepairService` implemented. Pure `analyze_cluster` core decides ok / split / queue per cluster: a flagged cluster (mean intra-score < `min_coherence`, or a bridge — weak min vs mean with density < 1) is split only when removing a *weak* (< `min_coherence`), non-confirmed edge disconnects it into two halves each denser than the original; otherwise queued to `er_repair_queue` (migration #4) for human review. Auto-splits are applied through `FeedbackApplicationService` (suppress the bridge as `actor='cluster_repair'` + re-cluster), so confirmed edges are never cut and the audit trail is consistent. `clustering.repair: {enabled, min_coherence, auto_split}` config; `arango-er repair-clusters` CLI. Validated on real ArangoDB (bridge auto-split into dense halves; queue mode; confirmed-bridge protection). Unit-tested split/queue/ok logic.
 
 New `ClusterRepairService` consuming 1.2's unsupervised metrics:
 

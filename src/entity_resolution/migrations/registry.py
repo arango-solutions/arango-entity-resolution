@@ -52,4 +52,10 @@ MIGRATIONS: List[Migration] = [
         description="Collection for per-field term-frequency tables (plan 1.1).",
         apply=_create_collection("er_term_frequencies"),
     ),
+    Migration(
+        id=4,
+        name="create_er_repair_queue",
+        description="Collection for clusters flagged for human review by cluster repair (plan 1.3).",
+        apply=_create_collection("er_repair_queue"),
+    ),
 ]
