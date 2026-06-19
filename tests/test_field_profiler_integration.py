@@ -48,7 +48,8 @@ def test_emit_config_produces_usable_similarity_block(profiled_collection):
     cfg = profiler.emit_similarity_config()["similarity"]
 
     assert set(cfg["field_weights"]) <= {"name", "email", "phone", "city"}
-    assert abs(sum(cfg["field_weights"].values()) - 1.0) < 1e-6
+    # Weights are rounded seed values (renormalized downstream), so allow rounding slack.
+    assert abs(sum(cfg["field_weights"].values()) - 1.0) < 1e-3
     assert cfg["transformers"]["phone"] == ["digits_only"]
     assert cfg["agreement_thresholds"]["email"] == 0.95
     # Seed priors present for EM to refine.

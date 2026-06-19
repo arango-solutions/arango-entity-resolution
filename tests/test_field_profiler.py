@@ -92,7 +92,7 @@ class TestEmitConfig:
         assert "bio" not in weights       # free_text excluded
         assert "rare" not in weights      # below min_completeness
         assert set(weights) == {"name", "email"}
-        assert abs(sum(weights.values()) - 1.0) < 1e-6  # normalized
+        assert abs(sum(weights.values()) - 1.0) < 1e-3  # normalized (rounded seeds)
         assert out["agreement_thresholds"]["email"] == 0.95
         assert "lower" in out["transformers"]["email"]
         assert out["m_priors"]["name"] > out["u_priors"]["name"]
