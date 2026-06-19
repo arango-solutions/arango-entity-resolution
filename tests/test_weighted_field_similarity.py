@@ -435,3 +435,43 @@ class TestWeightedFieldSimilarity:
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
 
+
+
+class TestPhoneticTransformers:
+    """Phonetic comparator transformers (plan 1.5)."""
+
+    def _sim(self, transformer):
+        from entity_resolution.similarity.weighted_field_similarity import WeightedFieldSimilarity
+        return WeightedFieldSimilarity(
+            field_weights={"name": 1.0},
+            algorithm="jaro_winkler",
+            field_transformers={"name": [transformer]},
+        )
+
+    def test_metaphone_matches_homophones(self):
+        sim = self._sim("metaphone")
+        # Smith / Smyth encode identically -> score 1.0.
+        score = sim.compute({"name": "Smith"}, {"name": "Smyth"})
+        assert score == pytest.approx(1.0)
+
+    def test_nysiis_matches_homophones(self):
+        sim = self._sim("nysiis")
+        assert sim.compute({"name": "Catherine"}, {"name": "Katherine"}) == pytest.approx(1.0)
+
+    def test_soundex_matches_homophones(self):
+        sim = self._sim("soundex")
+        assert sim.compute({"name": "Robert"}, {"name": "Rupert"}) == pytest.approx(1.0)
+
+    def test_match_rating_transformer_available(self):
+        sim = self._sim("match_rating")
+        # Same string encodes identically.
+        assert sim.compute({"name": "Byrne"}, {"name": "Byrne"}) == pytest.approx(1.0)
+
+    def test_phonetic_encodes_token_wise(self):
+        sim = self._sim("metaphone")
+        # Multi-word names encode per token; "Jon Smith"/"John Smith" agree.
+        assert sim.compute({"name": "Jon Smith"}, {"name": "John Smith"}) == pytest.approx(1.0)
+
+    def test_distinct_names_do_not_collide(self):
+        sim = self._sim("soundex")
+        assert sim.compute({"name": "Robert"}, {"name": "Xavier"}) < 1.0

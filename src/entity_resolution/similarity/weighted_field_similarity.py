@@ -70,6 +70,9 @@ class WeightedFieldSimilarity:
         'alphanumeric_only',
         'e164',
         'metaphone',
+        'nysiis',
+        'soundex',
+        'match_rating',
         'state_code',
         'street_suffix',
         'company_suffix',
@@ -400,10 +403,21 @@ class WeightedFieldSimilarity:
             return "".join(ch for ch in value if ch.isalnum())
         if name == "e164":
             return self._normalize_e164(value)
-        if name == "metaphone":
+        if name in ("metaphone", "nysiis", "soundex", "match_rating"):
             if not JELLYFISH_AVAILABLE:
-                raise ImportError("jellyfish library required for metaphone transformer")
-            return jellyfish.metaphone(value)
+                raise ImportError(f"jellyfish library required for {name} transformer")
+            # Phonetic encoders compare best per-token (so multi-word names like
+            # "John Smith" encode token-wise rather than as one blob).
+            fn = {
+                "metaphone": jellyfish.metaphone,
+                "nysiis": jellyfish.nysiis,
+                "soundex": jellyfish.soundex,
+                "match_rating": jellyfish.match_rating_codex,
+            }[name]
+            tokens = value.split()
+            if not tokens:
+                return ""
+            return " ".join(fn(tok) for tok in tokens)
         if name == "state_code":
             return self._normalize_state_code(value)
         if name == "street_suffix":
