@@ -7,6 +7,7 @@ from hand-tuned weights to self-tuning ones.
 
 from .em_estimator import EMEstimator, EMResult, estimate_mu
 from .fellegi_sunter_scorer import FellegiSunterScorer
+from .field_profiler import FieldProfiler, classify_values, field_config
 from .model_parameter_estimator import ModelParameterEstimator, config_hash
 
 __all__ = [
@@ -14,6 +15,9 @@ __all__ = [
     "EMResult",
     "estimate_mu",
     "FellegiSunterScorer",
+    "FieldProfiler",
+    "classify_values",
+    "field_config",
     "ModelParameterEstimator",
     "config_hash",
 ]

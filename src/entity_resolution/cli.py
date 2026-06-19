@@ -1245,6 +1245,28 @@ def estimate(config, sample_size, max_iterations, no_term_frequencies, database,
         sys.exit(1)
 
 
+@main.command("profile")
+@click.option("--collection", required=True, help="Collection to profile.")
+@click.option("--sample-size", type=int, default=1000, show_default=True, help="Documents to sample.")
+@click.option("--emit-config", is_flag=True, help="Emit a generated similarity config instead of the raw profile.")
+@connection_options
+def profile(collection, sample_size, emit_config, database, host, port, username, password):
+    """Profile a collection's fields and suggest comparators (plan 1.4)."""
+    try:
+        from entity_resolution.learning import FieldProfiler
+
+        db = _get_db_from_options(database, host, port, username, password)
+        profiler = FieldProfiler(db=db, collection=collection, sample_size=sample_size)
+        prof = profiler.profile()
+        if emit_config:
+            _emit_json(profiler.emit_similarity_config(prof))
+        else:
+            _emit_json(prof)
+    except Exception as e:
+        click.echo(click.style(f"Error: {e}", fg="red"), err=True)
+        sys.exit(1)
+
+
 @main.command("repair-clusters")
 @click.option("--collection", required=True, help="Source (vertex) collection name.")
 @click.option("--edge-collection", default="similarTo", show_default=True, help="Similarity edge collection.")
