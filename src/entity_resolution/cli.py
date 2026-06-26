@@ -1538,6 +1538,9 @@ def ui(database, host, port, username, password, serve_port, serve_host, auto_op
                 k, v = pair.split("=", 1)
                 collection_aliases[k.strip()] = v.strip()
 
+    from entity_resolution.ui.auth import parse_reviewers
+    reviewers = parse_reviewers(_os.getenv("ER_UI_REVIEWERS"))
+
     allowed_origins = ["http://localhost:5173"] if dev else None
     app = create_app(
         db,
@@ -1546,6 +1549,7 @@ def ui(database, host, port, username, password, serve_port, serve_host, auto_op
         connection_params=conn_params,
         collection_aliases=collection_aliases,
         auth_token=auth_token,
+        reviewers=reviewers,
     )
 
     if auto_open:

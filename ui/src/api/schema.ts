@@ -244,6 +244,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/curation/{collection}/history/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Curation History
+         * @description Return the audit trail (newest first) for a cluster/entity/pair key.
+         */
+        get: operations["curation_history_api_curation__collection__history__key__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/export/{collection}": {
         parameters: {
             query?: never;
@@ -373,6 +393,46 @@ export interface paths {
         };
         /** Health */
         get: operations["health_api_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/metrics/{collection}/cluster-quality": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cluster Quality
+         * @description Unsupervised per-cluster coherence metrics over the similarity graph.
+         */
+        get: operations["cluster_quality_api_metrics__collection__cluster_quality_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/metrics/{collection}/threshold-sweep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Threshold Sweep
+         * @description Precision/recall/F1 across thresholds for scored edges vs labeled pairs.
+         */
+        get: operations["threshold_sweep_api_metrics__collection__threshold_sweep_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -552,7 +612,12 @@ export interface paths {
         put?: never;
         /**
          * Submit Verdict
-         * @description Record a human correction for a pair.
+         * @description Record a human correction for a pair and apply it to the graph.
+         *
+         *     The verdict is persisted (for threshold optimization) and then applied:
+         *     a ``no_match`` suppresses the similarity edge, a ``match`` confirms it, and
+         *     the affected connected component is re-clustered. ``clusters_changed`` lets
+         *     the frontend invalidate its cluster caches.
          */
         post: operations["submit_verdict_api_review__collection__pair__key_a___key_b__verdict_post"];
         delete?: never;
@@ -1232,6 +1297,42 @@ export interface operations {
             };
         };
     };
+    curation_history_api_curation__collection__history__key__get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                collection: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     export_clusters_api_export__collection__post: {
         parameters: {
             query?: never;
@@ -1461,6 +1562,79 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    cluster_quality_api_metrics__collection__cluster_quality_get: {
+        parameters: {
+            query?: {
+                min_coherence?: number;
+            };
+            header?: never;
+            path: {
+                collection: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    threshold_sweep_api_metrics__collection__threshold_sweep_get: {
+        parameters: {
+            query: {
+                /** @description Ground-truth pair collection. */
+                truth_collection: string;
+                /** @description Optional comma-separated threshold grid (else exact curve). */
+                thresholds?: string | null;
+            };
+            header?: never;
+            path: {
+                collection: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

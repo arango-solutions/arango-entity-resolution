@@ -8,6 +8,18 @@ export class ApiError extends Error {
   }
 }
 
+/** localStorage key holding the current reviewer's display name (attribution). */
+export const REVIEWER_STORAGE_KEY = "er-ui-reviewer";
+
+function reviewerHeader(): Record<string, string> {
+  try {
+    const name = localStorage.getItem(REVIEWER_STORAGE_KEY);
+    return name ? { "X-Reviewer": name } : {};
+  } catch {
+    return {};
+  }
+}
+
 export async function fetchApi<T>(
   path: string,
   options?: RequestInit,
@@ -18,6 +30,7 @@ export async function fetchApi<T>(
     ...options,
     headers: {
       "Content-Type": "application/json",
+      ...reviewerHeader(),
       ...options?.headers,
     },
   });

@@ -8,7 +8,13 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from entity_resolution.ui.app import create_app
-from entity_resolution.ui.auth import extract_request_token, tokens_match
+from entity_resolution.ui.auth import (
+    ANONYMOUS_REVIEWER,
+    extract_request_token,
+    parse_reviewers,
+    resolve_reviewer,
+    tokens_match,
+)
 
 
 TOKEN = "s3cr3t-token-value"
@@ -40,6 +46,30 @@ def test_tokens_match():
     assert tokens_match(None, "abc") is False
     assert tokens_match("abc", None) is False
     assert tokens_match("", "") is False
+
+
+# ---------------------------------------------------------------------------
+# Reviewer identity (attribution, not auth) — plan 2.0
+# ---------------------------------------------------------------------------
+
+def test_parse_reviewers():
+    assert parse_reviewers("a=Alice, b=Bob") == {"a": "Alice", "b": "Bob"}
+    assert parse_reviewers("") == {}
+    assert parse_reviewers(None) == {}
+    assert parse_reviewers("garbage,c=Carol") == {"c": "Carol"}
+
+
+def test_resolve_reviewer_header_wins():
+    assert resolve_reviewer({"x-reviewer": "Alice"}, {"tok": "Bob"}) == "Alice"
+
+
+def test_resolve_reviewer_from_token_map():
+    assert resolve_reviewer({"authorization": "Bearer tok"}, {"tok": "Bob"}) == "Bob"
+
+
+def test_resolve_reviewer_anonymous_default():
+    assert resolve_reviewer({}, {}) == ANONYMOUS_REVIEWER
+    assert resolve_reviewer({"authorization": "Bearer unknown"}, {"tok": "Bob"}) == ANONYMOUS_REVIEWER
 
 
 # ---------------------------------------------------------------------------

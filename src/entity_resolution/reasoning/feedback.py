@@ -84,6 +84,7 @@ class FeedbackStore:
         source: str = "llm",
         model: Optional[str] = None,
         field_scores: Optional[Dict[str, Any]] = None,
+        reviewer: Optional[str] = None,
     ) -> str:
         """Persist a verdict.  Returns the document ``_key``."""
         key_a = record_a.get("_key") or _content_hash(record_a)
@@ -103,6 +104,7 @@ class FeedbackStore:
             "confidence": round(confidence, 4),
             "source": source,
             "model": model,
+            "reviewer": reviewer,
             "ts": time.time(),
             "field_scores": field_scores or {},
         }
@@ -118,6 +120,7 @@ class FeedbackStore:
         *,
         score: float = 0.0,
         confidence: float = 1.0,
+        reviewer: Optional[str] = None,
     ) -> str:
         """Override a verdict with a human-confirmed label."""
         return self.save(
@@ -127,6 +130,7 @@ class FeedbackStore:
             decision=correct_decision,
             confidence=confidence,
             source="human",
+            reviewer=reviewer,
         )
 
     # ------------------------------------------------------------------

@@ -292,6 +292,21 @@ class TestReview:
             json={"decision": "match", "confidence": 0.95},
         )
         assert resp.status_code == 200
+
+    @patch("entity_resolution.reasoning.feedback.FeedbackStore")
+    @patch("entity_resolution.utils.validation.validate_collection_name")
+    def test_submit_verdict_records_reviewer(self, mock_val, mock_fs_cls, client, mock_db):
+        store_inst = MagicMock()
+        store_inst.record_human_correction.return_value = "verdict-key-abc"
+        mock_fs_cls.return_value = store_inst
+        resp = client.post(
+            "/api/review/customers/pair/k1/k2/verdict",
+            json={"decision": "match"},
+            headers={"X-Reviewer": "alice"},
+        )
+        assert resp.status_code == 200
+        # The resolved reviewer is attributed to the persisted verdict.
+        assert store_inst.record_human_correction.call_args.kwargs["reviewer"] == "alice"
         data = resp.json()
         assert data["status"] == "ok"
         assert "verdict_key" in data
@@ -670,3 +685,24 @@ class TestPipelineWebSocket:
             msg = ws.receive_json()
         assert msg["type"] == "pipeline_failed"
         assert msg["error"] == "boom"
+
+
+# ===================================================================
+# Curation audit (plan 2.0)
+# ===================================================================
+
+class TestCuration:
+
+    def test_history_returns_entries(self, client, mock_db):
+        mock_db.aql.execute.return_value = iter(
+            [{"actor": "alice", "action": "verdict", "entity_key": "k1"}]
+        )
+        resp = client.get("/api/curation/customers/history/k1?limit=10")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "entries" in data
+        assert data["entries"][0]["actor"] == "alice"
+
+    def test_history_rejects_bad_collection(self, client):
+        resp = client.get("/api/curation/bad@name/history/k1")
+        assert resp.status_code in (400, 422)

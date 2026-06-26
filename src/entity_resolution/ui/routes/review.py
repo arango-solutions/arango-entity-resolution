@@ -133,6 +133,7 @@ async def submit_verdict(
     the frontend invalidate its cluster caches.
     """
     from entity_resolution.reasoning.feedback import FeedbackStore
+    from entity_resolution.services.curation_service import CurationService
     from entity_resolution.services.feedback_application_service import (
         FeedbackApplicationError,
         FeedbackApplicationService,
@@ -147,6 +148,7 @@ async def submit_verdict(
     db = _db(request)
     fb_coll = _feedback_collection(collection)
     store = FeedbackStore(db, collection=fb_coll)
+    actor = getattr(request.state, "reviewer", None) or "human"
 
     # Persist the verdict (training data for threshold optimization).
     doc_key = store.record_human_correction(
@@ -154,13 +156,25 @@ async def submit_verdict(
         key_b=key_b,
         correct_decision=body.decision,
         confidence=body.confidence if body.confidence is not None else 1.0,
+        reviewer=actor,
     )
+
+    # Audit the verdict (attribution trail).
+    try:
+        CurationService(db).record(
+            actor=actor,
+            action="verdict",
+            collection=collection,
+            entity_key=doc_key,
+            after={"key_a": key_a, "key_b": key_b, "decision": body.decision},
+        )
+    except Exception:  # auditing must never block the verdict
+        pass
 
     # Apply it to the similarity graph and re-cluster the affected component.
     edge_coll = resolve_collection_name(request, f"{collection}_similarity_edges")
     cluster_coll = resolve_collection_name(request, f"{collection}_clusters")
     golden_coll = resolve_collection_name(request, f"{collection}_golden_records")
-    actor = getattr(request.state, "reviewer", None) or "human"
 
     response: Dict[str, Any] = {"status": "ok", "verdict_key": doc_key}
 

@@ -2,6 +2,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { fetchApi } from "../../api/client";
 import { Sidebar } from "./Sidebar";
+import { ReviewerChip } from "./ReviewerChip";
 
 const pageTitles: Record<string, string> = {
   "/": "Dashboard",
@@ -55,8 +56,9 @@ export function AppShell() {
             No database connection — start ArangoDB and restart with connection options.
           </div>
         )}
-        <header className="flex h-14 shrink-0 items-center border-b border-gray-200 px-6">
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 px-6">
           <h1 className="text-lg font-semibold text-gray-900">{title}</h1>
+          <ReviewerChip />
         </header>
         <main className="flex-1 overflow-y-auto p-6">
           <Outlet />

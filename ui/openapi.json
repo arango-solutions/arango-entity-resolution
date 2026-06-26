@@ -1080,6 +1080,70 @@
         ]
       }
     },
+    "/api/curation/{collection}/history/{key}": {
+      "get": {
+        "description": "Return the audit trail (newest first) for a cluster/entity/pair key.",
+        "operationId": "curation_history_api_curation__collection__history__key__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Curation History Api Curation  Collection  History  Key  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Curation History",
+        "tags": [
+          "curation"
+        ]
+      }
+    },
     "/api/export/{collection}": {
       "post": {
         "description": "Export clusters to JSON and CSV files.",
@@ -1421,6 +1485,137 @@
           }
         },
         "summary": "Health"
+      }
+    },
+    "/api/metrics/{collection}/cluster-quality": {
+      "get": {
+        "description": "Unsupervised per-cluster coherence metrics over the similarity graph.",
+        "operationId": "cluster_quality_api_metrics__collection__cluster_quality_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_coherence",
+            "required": false,
+            "schema": {
+              "default": 0.5,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Min Coherence",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Cluster Quality Api Metrics  Collection  Cluster Quality Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cluster Quality",
+        "tags": [
+          "metrics"
+        ]
+      }
+    },
+    "/api/metrics/{collection}/threshold-sweep": {
+      "get": {
+        "description": "Precision/recall/F1 across thresholds for scored edges vs labeled pairs.",
+        "operationId": "threshold_sweep_api_metrics__collection__threshold_sweep_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Ground-truth pair collection.",
+            "in": "query",
+            "name": "truth_collection",
+            "required": true,
+            "schema": {
+              "description": "Ground-truth pair collection.",
+              "title": "Truth Collection",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional comma-separated threshold grid (else exact curve).",
+            "in": "query",
+            "name": "thresholds",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional comma-separated threshold grid (else exact curve).",
+              "title": "Thresholds"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Threshold Sweep Api Metrics  Collection  Threshold Sweep Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Threshold Sweep",
+        "tags": [
+          "metrics"
+        ]
       }
     },
     "/api/pipeline/history": {
@@ -1943,7 +2138,7 @@
     },
     "/api/review/{collection}/pair/{key_a}/{key_b}/verdict": {
       "post": {
-        "description": "Record a human correction for a pair.",
+        "description": "Record a human correction for a pair and apply it to the graph.\n\nThe verdict is persisted (for threshold optimization) and then applied:\na ``no_match`` suppresses the similarity edge, a ``match`` confirms it, and\nthe affected connected component is re-clustered. ``clusters_changed`` lets\nthe frontend invalidate its cluster caches.",
         "operationId": "submit_verdict_api_review__collection__pair__key_a___key_b__verdict_post",
         "parameters": [
           {

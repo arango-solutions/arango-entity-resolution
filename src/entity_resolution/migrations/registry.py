@@ -58,4 +58,10 @@ MIGRATIONS: List[Migration] = [
         description="Collection for clusters flagged for human review by cluster repair (plan 1.3).",
         apply=_create_collection("er_repair_queue"),
     ),
+    Migration(
+        id=5,
+        name="create_er_audit_log",
+        description="Audit trail for steward curation actions (plan 2.0).",
+        apply=_create_collection("er_audit_log"),
+    ),
 ]

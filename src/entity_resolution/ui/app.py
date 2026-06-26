@@ -11,12 +11,13 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from entity_resolution.utils.constants import __version__
-from .auth import extract_request_token, tokens_match
+from .auth import extract_request_token, resolve_reviewer, tokens_match
 
 from .routes import (
     collections,
     clusters,
     config,
+    curation,
     export,
     golden,
     metrics,
@@ -37,6 +38,7 @@ def create_app(
     connection_params: Optional[dict[str, Any]] = None,
     collection_aliases: Optional[dict[str, str]] = None,
     auth_token: Optional[str] = None,
+    reviewers: Optional[dict[str, str]] = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -79,6 +81,7 @@ def create_app(
     app.state.connection_params = connection_params or {}
     app.state.collection_aliases = collection_aliases or {}
     app.state.auth_token = auth_token or None
+    app.state.reviewers = reviewers or {}
     app.state.pipeline_runs: dict[str, dict[str, Any]] = {}
 
     origins = allowed_origins or []
@@ -117,6 +120,8 @@ def create_app(
                 provided = extract_request_token(request.headers)
                 if not tokens_match(provided, token):
                     return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        # Resolve the acting reviewer for attribution (audit log / verdicts).
+        request.state.reviewer = resolve_reviewer(request.headers, app.state.reviewers)
         return await call_next(request)
 
     @app.get("/api/health")
@@ -137,6 +142,7 @@ def create_app(
     app.include_router(resolve.router)
     app.include_router(export.router)
     app.include_router(metrics.router)
+    app.include_router(curation.router)
     app.include_router(ws.router)
 
     if _STATIC_DIR.is_dir():
