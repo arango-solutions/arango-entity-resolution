@@ -305,14 +305,20 @@ class EvaluationService:
         """
         if bucket <= 0:
             raise ValueError("bucket must be > 0")
+        # Epsilon nudge avoids float error at exact multiples
+        # (e.g. 0.95 / 0.05 == 18.9999996 would floor to the wrong bucket).
         cursor = self.db.aql.execute(
             f"""
             FOR e IN @@edges
                 FILTER e.suppressed != true AND e.{self.score_field} != null
-                LET lo = FLOOR(e.{self.score_field} / @bucket) * @bucket
-                COLLECT b = lo WITH COUNT INTO cnt
+                LET idx = FLOOR(e.{self.score_field} / @bucket + 0.0000001)
+                COLLECT b = idx WITH COUNT INTO cnt
                 SORT b
-                RETURN {{ lo: b, hi: b + @bucket, count: cnt }}
+                RETURN {{
+                    lo: ROUND(b * @bucket * 10000) / 10000,
+                    hi: ROUND((b + 1) * @bucket * 10000) / 10000,
+                    count: cnt
+                }}
             """,
             bind_vars={"@edges": self.edge_collection, "bucket": float(bucket)},
         )
