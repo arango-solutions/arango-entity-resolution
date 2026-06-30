@@ -87,6 +87,14 @@ class ConfigExportRequest(BaseModel):
     request_id: Optional[str] = None
 
 
+class ApplyThresholdRequest(BaseModel):
+    # All optional; only the provided thresholds are written to the run config.
+    threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    low_threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    high_threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    run_id: Optional[str] = None
+
+
 class ExportRequest(BaseModel):
     # Optional: when omitted the server writes to a temp dir so browser clients
     # do not need to know server filesystem paths.

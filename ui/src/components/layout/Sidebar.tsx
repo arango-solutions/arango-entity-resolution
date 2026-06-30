@@ -6,6 +6,7 @@ import {
   Play,
   Trophy,
   Search,
+  SlidersHorizontal,
   Settings,
   Download,
 } from "lucide-react";
@@ -28,6 +29,7 @@ const navItems: NavItem[] = [
   { to: "/pipeline", label: "Pipeline", icon: Play },
   { to: "/golden", label: "Golden Records", icon: Trophy },
   { to: "/resolve", label: "Resolve", icon: Search },
+  { to: "/tuner", label: "Threshold Tuner", icon: SlidersHorizontal },
   { to: "/config", label: "Config", icon: Settings },
   { to: "/export", label: "Export", icon: Download },
 ];

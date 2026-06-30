@@ -706,3 +706,63 @@ class TestCuration:
     def test_history_rejects_bad_collection(self, client):
         resp = client.get("/api/curation/bad@name/history/k1")
         assert resp.status_code in (400, 422)
+
+
+# ===================================================================
+# Threshold tuner metrics (plan 2.1)
+# ===================================================================
+
+class TestThresholdTuner:
+
+    def test_score_distribution(self, client, mock_db):
+        mock_db.aql.execute.return_value = iter(
+            [{"lo": 0.7, "hi": 0.75, "count": 3}, {"lo": 0.95, "hi": 1.0, "count": 1}]
+        )
+        resp = client.get("/api/metrics/customers/score-distribution?bucket=0.05")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["bucket"] == 0.05
+        assert data["buckets"][0]["count"] == 3
+
+    def test_boundary_pairs(self, client, mock_db):
+        mock_db.aql.execute.return_value = iter(
+            [{"key_a": "c", "key_b": "d", "score": 0.7}]
+        )
+        resp = client.get("/api/metrics/customers/boundary-pairs?score=0.68&window=0.05")
+        assert resp.status_code == 200
+        assert resp.json()["pairs"][0]["key_a"] == "c"
+
+    def test_apply_threshold_no_run_404(self, client, mock_db):
+        mock_db.aql.execute.return_value = iter([])  # no runs
+        resp = client.post(
+            "/api/metrics/customers/apply-threshold",
+            json={"low_threshold": 0.5, "high_threshold": 0.8},
+        )
+        assert resp.status_code == 404
+
+    def test_apply_threshold_success(self, client, mock_db):
+        run_doc = {
+            "_key": "run1",
+            "started_at": 1.0,
+            "config": {"entity_resolution": {"collection": "customers",
+                                              "similarity": {}, "active_learning": {}}},
+        }
+        mock_db.aql.execute.return_value = iter([run_doc])
+        resp = client.post(
+            "/api/metrics/customers/apply-threshold",
+            json={"low_threshold": 0.5, "high_threshold": 0.8},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["run_id"] == "run1"
+        assert data["thresholds"]["low_threshold"] == 0.5
+        assert data["thresholds"]["high_threshold"] == 0.8
+
+    def test_apply_threshold_readonly(self, mock_db):
+        readonly_app = create_app(db=mock_db, readonly=True)
+        readonly_client = TestClient(readonly_app)
+        resp = readonly_client.post(
+            "/api/metrics/customers/apply-threshold",
+            json={"high_threshold": 0.8},
+        )
+        assert resp.status_code == 403

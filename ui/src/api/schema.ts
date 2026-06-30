@@ -401,6 +401,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/metrics/{collection}/apply-threshold": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Threshold
+         * @description Persist chosen thresholds to the run config (audited).
+         *
+         *     Writes ``similarity.threshold`` and/or ``active_learning.low/high_threshold``
+         *     into the target pipeline-run config. Because Fellegi-Sunter posteriors are
+         *     stored as the edge ``similarity``, the tuner histogram and these thresholds
+         *     share one scale — no separate score↔posterior band remap is needed.
+         */
+        post: operations["apply_threshold_api_metrics__collection__apply_threshold_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/metrics/{collection}/boundary-pairs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Boundary Pairs
+         * @description Candidate pairs with an edge score within ``window`` of ``score``.
+         */
+        get: operations["boundary_pairs_api_metrics__collection__boundary_pairs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics/{collection}/cluster-quality": {
         parameters: {
             query?: never;
@@ -413,6 +458,26 @@ export interface paths {
          * @description Unsupervised per-cluster coherence metrics over the similarity graph.
          */
         get: operations["cluster_quality_api_metrics__collection__cluster_quality_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/metrics/{collection}/score-distribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Score Distribution
+         * @description Histogram of non-suppressed similarity-edge scores (for the tuner).
+         */
+        get: operations["score_distribution_api_metrics__collection__score_distribution_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -690,6 +755,17 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ApplyThresholdRequest */
+        ApplyThresholdRequest: {
+            /** High Threshold */
+            high_threshold?: number | null;
+            /** Low Threshold */
+            low_threshold?: number | null;
+            /** Run Id */
+            run_id?: string | null;
+            /** Threshold */
+            threshold?: number | null;
+        };
         /** ClusterGraphResponse */
         ClusterGraphResponse: {
             /** Edges */
@@ -1566,10 +1642,119 @@ export interface operations {
             };
         };
     };
+    apply_threshold_api_metrics__collection__apply_threshold_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                collection: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyThresholdRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    boundary_pairs_api_metrics__collection__boundary_pairs_get: {
+        parameters: {
+            query: {
+                score: number;
+                window?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                collection: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     cluster_quality_api_metrics__collection__cluster_quality_get: {
         parameters: {
             query?: {
                 min_coherence?: number;
+            };
+            header?: never;
+            path: {
+                collection: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    score_distribution_api_metrics__collection__score_distribution_get: {
+        parameters: {
+            query?: {
+                bucket?: number;
             };
             header?: never;
             path: {

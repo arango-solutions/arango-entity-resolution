@@ -60,7 +60,11 @@ Ordered so each screen consumes backend capability that exists by the time it's 
 
 **Acceptance:** a verdict records `actor` = the resolved reviewer in both the feedback store and `er_audit_log`; `GET /api/curation/{collection}/history/{key}` returns the entries. Integration test on real ArangoDB.
 
-### 2.1 Threshold tuning with live preview (M) — *flagship*
+### 2.1 Threshold tuning with live preview (M) — *flagship* — **SHIPPED (2026-06-30)**
+
+> **Status:** Backend (`score-distribution`, `boundary-pairs`, `apply-threshold`) + `ThresholdTunerPage` (histogram, dual low/high sliders, client-side live deltas, boundary pairs via `PairComparison`, audited Apply) landed on `feat/phase2-1-threshold-tuner`.
+>
+> **Band-migration scope note:** the feared score↔posterior remap is **not needed in v1**. The Fellegi-Sunter scorer already stores its posterior as the edge `similarity`, so the histogram and the chosen thresholds live on the *same scale* — `apply-threshold` writes low/high directly regardless of `scoring_method`. A remap only becomes necessary if a future change stores raw (pre-logistic) scores separately; documented inline in `metrics.py::apply_threshold`. Playwright drag-test deferred to 2.5 (UI test stack).
 
 **Backend:**
 - `GET /api/metrics/{collection}/score-distribution` → histogram buckets `[{lo, hi, count}]` from one AQL `COLLECT FLOOR(e.similarity/0.05) ...` over non-suppressed edges (cheap; respects suppression).

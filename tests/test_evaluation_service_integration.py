@@ -80,3 +80,31 @@ def test_cluster_quality_against_real_collections(eval_fixture):
     assert cluster["size"] == 2
     assert cluster["mean_edge_score"] == pytest.approx(0.95)
     assert cluster["low_coherence"] is False
+
+
+def test_score_distribution_excludes_suppressed(eval_fixture):
+    db, vcol, ecol, ccol, tcol, vid = eval_fixture
+    service = EvaluationService(db, edge_collection=ecol)
+    buckets = service.score_distribution(bucket=0.05)
+
+    total = sum(b["count"] for b in buckets)
+    assert total == 3  # suppressed g-h (0.99) excluded
+    # 0.95 bucket present, 0.99 (suppressed) absent.
+    los = {round(b["lo"], 2) for b in buckets}
+    assert 0.95 in los
+    # Each bucket is well-formed.
+    for b in buckets:
+        assert b["hi"] == pytest.approx(b["lo"] + 0.05)
+
+
+def test_boundary_pairs_near_score(eval_fixture):
+    db, vcol, ecol, ccol, tcol, vid = eval_fixture
+    service = EvaluationService(db, edge_collection=ecol)
+    pairs = service.boundary_pairs(0.68, window=0.05, limit=10)
+
+    # 0.70 (c-d) and 0.65 (e-f) within 0.05 of 0.68; 0.95 and suppressed excluded.
+    keys = {(p["key_a"], p["key_b"]) for p in pairs}
+    assert ("c", "d") in keys
+    assert ("e", "f") in keys
+    assert ("a", "b") not in keys
+    assert ("g", "h") not in keys

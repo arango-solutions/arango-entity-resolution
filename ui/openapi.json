@@ -1,6 +1,62 @@
 {
   "components": {
     "schemas": {
+      "ApplyThresholdRequest": {
+        "properties": {
+          "high_threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High Threshold"
+          },
+          "low_threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low Threshold"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          }
+        },
+        "title": "ApplyThresholdRequest",
+        "type": "object"
+      },
       "ClusterGraphResponse": {
         "properties": {
           "edges": {
@@ -1487,6 +1543,141 @@
         "summary": "Health"
       }
     },
+    "/api/metrics/{collection}/apply-threshold": {
+      "post": {
+        "description": "Persist chosen thresholds to the run config (audited).\n\nWrites ``similarity.threshold`` and/or ``active_learning.low/high_threshold``\ninto the target pipeline-run config. Because Fellegi-Sunter posteriors are\nstored as the edge ``similarity``, the tuner histogram and these thresholds\nshare one scale — no separate score↔posterior band remap is needed.",
+        "operationId": "apply_threshold_api_metrics__collection__apply_threshold_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyThresholdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Apply Threshold Api Metrics  Collection  Apply Threshold Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Threshold",
+        "tags": [
+          "metrics"
+        ]
+      }
+    },
+    "/api/metrics/{collection}/boundary-pairs": {
+      "get": {
+        "description": "Candidate pairs with an edge score within ``window`` of ``score``.",
+        "operationId": "boundary_pairs_api_metrics__collection__boundary_pairs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "score",
+            "required": true,
+            "schema": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Score",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "default": 0.05,
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0,
+              "title": "Window",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Boundary Pairs Api Metrics  Collection  Boundary Pairs Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Boundary Pairs",
+        "tags": [
+          "metrics"
+        ]
+      }
+    },
     "/api/metrics/{collection}/cluster-quality": {
       "get": {
         "description": "Unsupervised per-cluster coherence metrics over the similarity graph.",
@@ -1539,6 +1730,63 @@
           }
         },
         "summary": "Cluster Quality",
+        "tags": [
+          "metrics"
+        ]
+      }
+    },
+    "/api/metrics/{collection}/score-distribution": {
+      "get": {
+        "description": "Histogram of non-suppressed similarity-edge scores (for the tuner).",
+        "operationId": "score_distribution_api_metrics__collection__score_distribution_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "default": 0.05,
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0,
+              "title": "Bucket",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Score Distribution Api Metrics  Collection  Score Distribution Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Score Distribution",
         "tags": [
           "metrics"
         ]

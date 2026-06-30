@@ -11,6 +11,7 @@ const pageTitles: Record<string, string> = {
   "/pipeline": "Pipeline",
   "/golden": "Golden Records",
   "/resolve": "Resolve Entity",
+  "/tuner": "Threshold Tuner",
   "/config": "Config Builder",
   "/export": "Export",
 };

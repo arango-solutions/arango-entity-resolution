@@ -295,6 +295,63 @@ class EvaluationService:
         truth = self._load_truth(truth_collection)
         return threshold_sweep(scored, truth, thresholds=thresholds)
 
+    def score_distribution(self, bucket: float = 0.05) -> List[Dict[str, Any]]:
+        """Histogram of non-suppressed edge scores, bucketed by ``bucket`` width.
+
+        Returns ``[{lo, hi, count}, ...]`` sorted ascending. The score field is
+        the edge ``similarity`` (a heuristic score or a Fellegi-Sunter posterior,
+        depending on the configured ``scoring_method``); the tuner therefore
+        operates on the same scale the thresholds are applied to.
+        """
+        if bucket <= 0:
+            raise ValueError("bucket must be > 0")
+        cursor = self.db.aql.execute(
+            f"""
+            FOR e IN @@edges
+                FILTER e.suppressed != true AND e.{self.score_field} != null
+                LET lo = FLOOR(e.{self.score_field} / @bucket) * @bucket
+                COLLECT b = lo WITH COUNT INTO cnt
+                SORT b
+                RETURN {{ lo: b, hi: b + @bucket, count: cnt }}
+            """,
+            bind_vars={"@edges": self.edge_collection, "bucket": float(bucket)},
+        )
+        return list(cursor)
+
+    def boundary_pairs(
+        self,
+        score: float,
+        *,
+        window: float = 0.05,
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """Candidate pairs whose edge score is within ``window`` of ``score``.
+
+        Lets a steward *see* what a threshold means. Returns
+        ``[{key_a, key_b, score}, ...]`` nearest-first.
+        """
+        cursor = self.db.aql.execute(
+            f"""
+            FOR e IN @@edges
+                FILTER e.suppressed != true AND e.{self.score_field} != null
+                FILTER ABS(e.{self.score_field} - @score) <= @window
+                SORT ABS(e.{self.score_field} - @score) ASC
+                LIMIT @limit
+                RETURN {{
+                    key_a: PARSE_IDENTIFIER(e._from).key,
+                    key_b: PARSE_IDENTIFIER(e._to).key,
+                    score: e.{self.score_field}
+                }}
+            """,
+            bind_vars={
+                "@edges": self.edge_collection,
+                "score": float(score),
+                "window": float(window),
+                "limit": int(limit),
+            },
+        )
+        return list(cursor)
+
     def cluster_quality(
         self,
         cluster_collection: str,
