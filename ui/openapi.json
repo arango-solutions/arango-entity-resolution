@@ -429,6 +429,51 @@
         "title": "ExportRequest",
         "type": "object"
       },
+      "GoldenApplyRequest": {
+        "properties": {
+          "fields": {
+            "additionalProperties": true,
+            "title": "Fields",
+            "type": "object"
+          },
+          "golden_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Golden Key"
+          },
+          "member_keys": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Member Keys",
+            "type": "array"
+          },
+          "merge_strategy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merge Strategy"
+          }
+        },
+        "required": [
+          "member_keys",
+          "fields"
+        ],
+        "title": "GoldenApplyRequest",
+        "type": "object"
+      },
       "GoldenRecordPreviewRequest": {
         "properties": {
           "entity_keys": {
@@ -574,6 +619,78 @@
           "key_b"
         ],
         "title": "SplitClusterRequest",
+        "type": "object"
+      },
+      "SurvivorshipPreviewRequest": {
+        "properties": {
+          "field_strategies": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field Strategies"
+          },
+          "member_keys": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 2,
+            "title": "Member Keys",
+            "type": "array"
+          },
+          "merge_strategy": {
+            "default": "field_voting",
+            "title": "Merge Strategy",
+            "type": "string"
+          },
+          "recency_field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recency Field"
+          },
+          "source_field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Field"
+          },
+          "source_priority": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Priority"
+          }
+        },
+        "required": [
+          "member_keys"
+        ],
+        "title": "SurvivorshipPreviewRequest",
         "type": "object"
       },
       "ValidationError": {
@@ -1642,6 +1759,61 @@
         ]
       }
     },
+    "/api/golden/{collection}/apply": {
+      "post": {
+        "description": "Persist a steward-edited golden record and write an audit entry.",
+        "operationId": "apply_golden_record_api_golden__collection__apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoldenApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Apply Golden Record Api Golden  Collection  Apply Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Golden Record",
+        "tags": [
+          "golden"
+        ]
+      }
+    },
     "/api/golden/{collection}/merge": {
       "post": {
         "description": "Execute a golden record merge and persist the result.",
@@ -1747,6 +1919,61 @@
           }
         },
         "summary": "Preview Merge",
+        "tags": [
+          "golden"
+        ]
+      }
+    },
+    "/api/golden/{collection}/survivorship-preview": {
+      "post": {
+        "description": "Preview a golden record from member keys using a survivorship strategy.\n\nUses the same per-field consolidation engine as the pipeline\n(``GoldenRecordPersistenceService``) and returns field-level provenance and\nthe set of conflicting fields, plus the source records so the UI can offer\nper-field overrides. Nothing is persisted.",
+        "operationId": "survivorship_preview_api_golden__collection__survivorship_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SurvivorshipPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Survivorship Preview Api Golden  Collection  Survivorship Preview Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Survivorship Preview",
         "tags": [
           "golden"
         ]

@@ -494,6 +494,55 @@ class TestGolden:
         assert "source_records" in data
         assert "merged_keys" in data
 
+    # -- 2.3b survivorship preview + apply --
+
+    def test_survivorship_preview(self, client, mock_db):
+        mock_db.collection.return_value.get.side_effect = [
+            {"_key": "a", "name": "Acme", "city": "NYC"},
+            {"_key": "b", "name": "Acme Inc", "city": "NYC"},
+        ]
+        resp = client.post(
+            "/api/golden/customers/survivorship-preview",
+            json={"member_keys": ["a", "b"], "merge_strategy": "field_voting"},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert "golden_record" in data
+        assert "city" in data["golden_record"]
+        # name differs across sources -> conflict; city agrees -> not a conflict.
+        assert "name" in data["conflicts"]
+        assert "city" not in data["conflicts"]
+
+    def test_survivorship_preview_bad_strategy_400(self, client, mock_db):
+        mock_db.collection.return_value.get.side_effect = [
+            {"_key": "a", "name": "Acme"},
+            {"_key": "b", "name": "Acme Inc"},
+        ]
+        resp = client.post(
+            "/api/golden/customers/survivorship-preview",
+            json={"member_keys": ["a", "b"], "merge_strategy": "bogus"},
+        )
+        assert resp.status_code == 400
+
+    def test_apply_golden_readonly_403(self, mock_db):
+        c = TestClient(create_app(db=mock_db, readonly=True))
+        resp = c.post("/api/golden/customers/apply",
+                      json={"member_keys": ["a", "b"], "fields": {"name": "Acme"}})
+        assert resp.status_code == 403
+
+    def test_apply_golden(self, client, mock_db):
+        mock_db.collection.return_value.get.return_value = None
+        resp = client.post(
+            "/api/golden/customers/apply",
+            json={"member_keys": ["a", "b"], "fields": {"name": "Acme Inc", "_key": "nope"}},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["status"] == "ok"
+        assert data["golden_record"]["name"] == "Acme Inc"
+        # reserved keys stripped from user fields
+        assert data["golden_record"]["_key"] != "nope"
+
 
 # ===================================================================
 # Config

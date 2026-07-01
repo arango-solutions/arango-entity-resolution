@@ -95,6 +95,22 @@ class ApplyThresholdRequest(BaseModel):
     run_id: Optional[str] = None
 
 
+class SurvivorshipPreviewRequest(BaseModel):
+    member_keys: List[str] = Field(..., min_length=2)
+    merge_strategy: str = "field_voting"
+    field_strategies: Optional[Dict[str, str]] = None
+    recency_field: Optional[str] = None
+    source_field: Optional[str] = None
+    source_priority: Optional[List[str]] = None
+
+
+class GoldenApplyRequest(BaseModel):
+    member_keys: List[str] = Field(..., min_length=1)
+    fields: Dict[str, Any]
+    golden_key: Optional[str] = None
+    merge_strategy: Optional[str] = None
+
+
 class BatchVerdictItem(BaseModel):
     key_a: str
     key_b: str

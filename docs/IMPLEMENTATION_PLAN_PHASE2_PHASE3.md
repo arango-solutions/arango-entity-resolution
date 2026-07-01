@@ -102,7 +102,15 @@ Ordered so each screen consumes backend capability that exists by the time it's 
 
 **Acceptance:** remove/merge/split each mutate clusters and write audit rows; suppressed/confirmed honored on re-run; Playwright covers remove-member end to end.
 
-### 2.3 Review workflow depth (M)
+### 2.3 Review workflow depth (M) — **SHIPPED (2026-07-01)**
+
+> **Status (2 commits on feat/phase2-3-review-depth):**
+> - **2.3a — review depth:** `POST /api/review/{c}/batch-verdict` (N verdicts in one call, each applied + audited, per-pair failures reported), `GET /api/review/{c}/export.csv`. Frontend: bulk select + Accept/Reject bar, confidence slider in `VerdictPanel`, keyboard-shortcuts modal, CSV download, pagination preserved across filter changes.
+> - **2.3b — editable golden records:** `POST /api/golden/{c}/survivorship-preview` (reuses `GoldenRecordPersistenceService._consolidate` → field-level provenance + conflicts + sources), `POST /api/golden/{c}/apply` (persists steward-edited record, reserved-key stripped, audited via `CurationService`). Frontend: `MergeStrategySelector` aligned to engine strategies (`field_voting`/`most_complete`); `GoldenRecordsPage` shows conflicts, per-field `ConflictResolver` overrides, and a Save button.
+> - Tests: batch-verdict + CSV + survivorship preview/apply + readonly guards (route unit). Full unit sweep green (1472). UI typecheck/build green.
+> - Deferred to 2.5: reviewer/timestamp surfaced in `PairComparison`, auto-advance, `most_recent`/`source_priority` strategy config UI, golden-edit Playwright.
+
+
 
 **Backend:**
 - Batch endpoint `POST /api/review/{collection}/batch-verdict` (filter-scoped "accept all LLM matches ≥ X", "send band to LLM"); applies 0.1 per pair under one response.

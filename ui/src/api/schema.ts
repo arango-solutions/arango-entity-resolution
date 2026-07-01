@@ -384,6 +384,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/golden/{collection}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Golden Record
+         * @description Persist a steward-edited golden record and write an audit entry.
+         */
+        post: operations["apply_golden_record_api_golden__collection__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/golden/{collection}/merge": {
         parameters: {
             query?: never;
@@ -418,6 +438,31 @@ export interface paths {
          * @description Preview a golden record merge without persisting.
          */
         post: operations["preview_merge_api_golden__collection__preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/golden/{collection}/survivorship-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Survivorship Preview
+         * @description Preview a golden record from member keys using a survivorship strategy.
+         *
+         *     Uses the same per-field consolidation engine as the pipeline
+         *     (``GoldenRecordPersistenceService``) and returns field-level provenance and
+         *     the set of conflicting fields, plus the source records so the UI can offer
+         *     per-field overrides. Nothing is persisted.
+         */
+        post: operations["survivorship_preview_api_golden__collection__survivorship_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1034,6 +1079,19 @@ export interface components {
             /** Output Dir */
             output_dir?: string | null;
         };
+        /** GoldenApplyRequest */
+        GoldenApplyRequest: {
+            /** Fields */
+            fields: {
+                [key: string]: unknown;
+            };
+            /** Golden Key */
+            golden_key?: string | null;
+            /** Member Keys */
+            member_keys: string[];
+            /** Merge Strategy */
+            merge_strategy?: string | null;
+        };
         /** GoldenRecordPreviewRequest */
         GoldenRecordPreviewRequest: {
             /** Entity Keys */
@@ -1098,6 +1156,26 @@ export interface components {
             key_a: string;
             /** Key B */
             key_b: string;
+        };
+        /** SurvivorshipPreviewRequest */
+        SurvivorshipPreviewRequest: {
+            /** Field Strategies */
+            field_strategies?: {
+                [key: string]: string;
+            } | null;
+            /** Member Keys */
+            member_keys: string[];
+            /**
+             * Merge Strategy
+             * @default field_voting
+             */
+            merge_strategy: string;
+            /** Recency Field */
+            recency_field?: string | null;
+            /** Source Field */
+            source_field?: string | null;
+            /** Source Priority */
+            source_priority?: string[] | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -1784,6 +1862,43 @@ export interface operations {
             };
         };
     };
+    apply_golden_record_api_golden__collection__apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                collection: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoldenApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     merge_records_api_golden__collection__merge_post: {
         parameters: {
             query?: never;
@@ -1833,6 +1948,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["GoldenRecordPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    survivorship_preview_api_golden__collection__survivorship_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                collection: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SurvivorshipPreviewRequest"];
             };
         };
         responses: {

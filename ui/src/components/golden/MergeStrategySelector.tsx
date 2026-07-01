@@ -5,19 +5,14 @@ interface MergeStrategySelectorProps {
 
 const strategies = [
   {
+    value: "field_voting",
+    label: "Field Voting",
+    description: "Most frequent value per field (ties → longest)",
+  },
+  {
     value: "most_complete",
     label: "Most Complete",
-    description: "Select the most complete value for each field",
-  },
-  {
-    value: "newest",
-    label: "Newest",
-    description: "Prefer the most recently updated value",
-  },
-  {
-    value: "first",
-    label: "First",
-    description: "Use the first encountered value",
+    description: "Select the longest / most informative value per field",
   },
 ] as const;
 

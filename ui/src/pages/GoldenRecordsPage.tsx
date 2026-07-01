@@ -1,22 +1,30 @@
 import { useState } from "react";
-import { Trophy, ArrowRight, Loader2 } from "lucide-react";
+import { Trophy, ArrowRight, Loader2, Save, Check } from "lucide-react";
 import { Link } from "react-router-dom";
 import { EmptyState } from "../components/shared/EmptyState";
 import { useSelectedCollection } from "../contexts/CollectionContext";
 import { GoldenRecordView } from "../components/golden/GoldenRecordView";
 import { MergeStrategySelector } from "../components/golden/MergeStrategySelector";
-import { previewGoldenRecord } from "../api/golden";
+import {
+  survivorshipPreview,
+  applyGoldenRecord,
+  type FieldProvenance,
+} from "../api/golden";
 
 export function GoldenRecordsPage() {
   const { selectedCollection } = useSelectedCollection();
   const [keysInput, setKeysInput] = useState("");
-  const [strategy, setStrategy] = useState("most_complete");
+  const [strategy, setStrategy] = useState("field_voting");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [preview, setPreview] = useState<{
     fields: Record<string, unknown>;
     provenance: Record<string, { source: string; confidence: number }>;
     conflicts: string[];
+    sources: Record<string, unknown>[];
+    memberKeys: string[];
   } | null>(null);
 
   if (!selectedCollection) {
@@ -35,32 +43,63 @@ export function GoldenRecordsPage() {
     .filter(Boolean);
 
   async function handlePreview() {
-    if (parsedKeys.length === 0) return;
+    if (parsedKeys.length < 2) return;
     setLoading(true);
     setError(null);
     setPreview(null);
+    setSaved(false);
 
     try {
-      const result = await previewGoldenRecord(
+      const result = await survivorshipPreview(
         selectedCollection!,
         parsedKeys,
         strategy,
       );
-
-      // The merge preview returns the fused golden record. Field-level
-      // provenance/conflicts are not produced by the preview endpoint, so they
-      // render empty until a richer survivorship API exists.
-      const goldenFields = (result.golden_record ?? {}) as Record<string, unknown>;
-
+      // Adapt engine provenance ({chosenFrom, strategy, ...}) to the view's
+      // {source, confidence} shape.
+      const prov: Record<string, { source: string; confidence: number }> = {};
+      for (const [f, p] of Object.entries(
+        (result.provenance ?? {}) as Record<string, FieldProvenance>,
+      )) {
+        prov[f] = { source: p.chosenFrom, confidence: 0 };
+      }
       setPreview({
-        fields: goldenFields,
-        provenance: {},
-        conflicts: [],
+        fields: { ...result.golden_record },
+        provenance: prov,
+        conflicts: result.conflicts ?? [],
+        sources: result.sources ?? [],
+        memberKeys: result.merged_keys ?? parsedKeys,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Preview failed");
     } finally {
       setLoading(false);
+    }
+  }
+
+  function handleResolveConflict(field: string, value: unknown) {
+    setPreview((prev) =>
+      prev ? { ...prev, fields: { ...prev.fields, [field]: value } } : prev,
+    );
+    setSaved(false);
+  }
+
+  async function handleApply() {
+    if (!preview) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await applyGoldenRecord(
+        selectedCollection!,
+        preview.memberKeys,
+        preview.fields,
+        strategy,
+      );
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -101,7 +140,7 @@ export function GoldenRecordsPage() {
           <div className="flex items-center gap-4">
             <button
               onClick={handlePreview}
-              disabled={loading || parsedKeys.length === 0}
+              disabled={loading || parsedKeys.length < 2}
               className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
             >
               {loading ? (
@@ -131,13 +170,40 @@ export function GoldenRecordsPage() {
 
       {preview && (
         <div className="space-y-4">
-          <h2 className="text-sm font-semibold text-gray-900">
-            Preview Result
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-900">
+              Preview Result
+              {preview.conflicts.length > 0 && (
+                <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                  {preview.conflicts.length} conflicting field
+                  {preview.conflicts.length === 1 ? "" : "s"}
+                </span>
+              )}
+            </h2>
+            <button
+              onClick={handleApply}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-green-700 disabled:opacity-50"
+            >
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : saved ? (
+                <Check className="h-4 w-4" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              {saved ? "Saved" : "Save golden record"}
+            </button>
+          </div>
+          <p className="text-xs text-gray-500">
+            Click a conflicting field (amber) to pick a different source value before saving.
+          </p>
           <GoldenRecordView
             goldenRecord={preview.fields}
             provenance={preview.provenance}
             conflicts={preview.conflicts}
+            sources={preview.sources}
+            onResolveConflict={handleResolveConflict}
           />
         </div>
       )}
