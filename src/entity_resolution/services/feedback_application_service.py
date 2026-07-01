@@ -409,3 +409,59 @@ class FeedbackApplicationService:
             return {"verdict": verdict, "recluster": recluster}
         finally:
             self._release_lock(lock_key)
+
+    # ------------------------------------------------------------------
+    # Cluster editing (Phase 2.2): remove-member / merge — batch edits
+    # under a single component lock + one scoped re-cluster.
+    # ------------------------------------------------------------------
+
+    def remove_member(
+        self,
+        member_key: str,
+        other_keys: List[str],
+        *,
+        actor: str = "human",
+        auto_refresh: bool = False,
+    ) -> Dict[str, Any]:
+        """Eject ``member_key`` from its cluster by suppressing every edge to
+        the other members, then re-cluster the affected component."""
+        others = [k for k in other_keys if k and k != member_key]
+        lock_key = self._acquire_lock(member_key)
+        if lock_key is None:
+            raise FeedbackApplicationError(
+                f"component for '{member_key}' is locked by a concurrent edit; retry"
+            )
+        try:
+            for other in others:
+                self.apply_verdict(member_key, other, "no_match", actor=actor)
+            recluster = self.recluster_component(
+                member_key, *others, auto_refresh=auto_refresh
+            )
+            return {"suppressed_edges": len(others), "recluster": recluster}
+        finally:
+            self._release_lock(lock_key)
+
+    def merge_members(
+        self,
+        member_keys: List[str],
+        *,
+        actor: str = "human",
+        auto_refresh: bool = False,
+    ) -> Dict[str, Any]:
+        """Merge the components of ``member_keys`` by confirming a chain of edges
+        between consecutive representatives, then re-cluster."""
+        keys = [k for k in member_keys if k]
+        if len(keys) < 2:
+            raise ValueError("merge requires at least two member keys")
+        lock_key = self._acquire_lock(keys[0])
+        if lock_key is None:
+            raise FeedbackApplicationError(
+                f"component for '{keys[0]}' is locked by a concurrent edit; retry"
+            )
+        try:
+            for a, b in zip(keys, keys[1:]):
+                self.apply_verdict(a, b, "match", actor=actor)
+            recluster = self.recluster_component(*keys, auto_refresh=auto_refresh)
+            return {"confirmed_edges": len(keys) - 1, "recluster": recluster}
+        finally:
+            self._release_lock(lock_key)

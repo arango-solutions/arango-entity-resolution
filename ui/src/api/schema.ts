@@ -244,6 +244,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/curation/{collection}/cluster/{key}/remove-member": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove Member
+         * @description Eject a member from a cluster (suppress its intra-cluster edges).
+         */
+        post: operations["remove_member_api_curation__collection__cluster__key__remove_member_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/curation/{collection}/cluster/{key}/split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Split Cluster
+         * @description Split a cluster by suppressing a bridge edge between two members.
+         */
+        post: operations["split_cluster_api_curation__collection__cluster__key__split_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/curation/{collection}/history/{key}": {
         parameters: {
             query?: never;
@@ -256,6 +296,46 @@ export interface paths {
          * @description Return the audit trail (newest first) for a cluster/entity/pair key.
          */
         get: operations["curation_history_api_curation__collection__history__key__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/curation/{collection}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge Clusters
+         * @description Merge two or more clusters by confirming edges between representatives.
+         */
+        post: operations["merge_clusters_api_curation__collection__merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/curation/{collection}/suspect-clusters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Suspect Clusters
+         * @description Pending entries from the cluster repair queue, scoped to this collection.
+         */
+        get: operations["suspect_clusters_api_curation__collection__suspect_clusters_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -908,6 +988,11 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** MergeClustersRequest */
+        MergeClustersRequest: {
+            /** Cluster Keys */
+            cluster_keys: string[];
+        };
         /** PipelineRunRequest */
         PipelineRunRequest: {
             /** Config */
@@ -921,6 +1006,11 @@ export interface components {
             run_id: string;
             /** Status */
             status: string;
+        };
+        /** RemoveMemberRequest */
+        RemoveMemberRequest: {
+            /** Member Key */
+            member_key: string;
         };
         /** ResolveRequest */
         ResolveRequest: {
@@ -940,6 +1030,13 @@ export interface components {
              * @default 10
              */
             top_k: number;
+        };
+        /** SplitClusterRequest */
+        SplitClusterRequest: {
+            /** Key A */
+            key_a: string;
+            /** Key B */
+            key_b: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -1373,6 +1470,82 @@ export interface operations {
             };
         };
     };
+    remove_member_api_curation__collection__cluster__key__remove_member_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                collection: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoveMemberRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    split_cluster_api_curation__collection__cluster__key__split_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                collection: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SplitClusterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     curation_history_api_curation__collection__history__key__get: {
         parameters: {
             query?: {
@@ -1382,6 +1555,78 @@ export interface operations {
             path: {
                 collection: string;
                 key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    merge_clusters_api_curation__collection__merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                collection: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeClustersRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suspect_clusters_api_curation__collection__suspect_clusters_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                collection: string;
             };
             cookie?: never;
         };

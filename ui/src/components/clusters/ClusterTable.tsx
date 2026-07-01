@@ -27,6 +27,8 @@ interface ClusterTableProps {
   onPageChange: (offset: number) => void;
   onLimitChange: (limit: number) => void;
   collection: string;
+  selectedKeys?: Set<string>;
+  onToggleSelect?: (key: string) => void;
 }
 
 type SortKey = "cluster_id" | "size" | "quality_score" | "average_similarity" | "density";
@@ -48,8 +50,11 @@ export function ClusterTable({
   onPageChange,
   onLimitChange,
   collection,
+  selectedKeys,
+  onToggleSelect,
 }: ClusterTableProps) {
   const navigate = useNavigate();
+  const selectable = !!onToggleSelect;
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -89,6 +94,7 @@ export function ClusterTable({
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
             <tr>
+              {selectable && <th className="w-10 px-4 py-3" />}
               {COLUMNS.map((col) => (
                 <th
                   key={col.key}
@@ -126,7 +132,7 @@ export function ClusterTable({
             {sorted.length === 0 ? (
               <tr>
                 <td
-                  colSpan={COLUMNS.length + 1}
+                  colSpan={COLUMNS.length + 1 + (selectable ? 1 : 0)}
                   className="px-4 py-8 text-center text-gray-400"
                 >
                   No clusters found
@@ -144,6 +150,16 @@ export function ClusterTable({
                       navigate(`/clusters/${collection}/${row.cluster_id}`)
                     }
                   >
+                    {selectable && (
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedKeys?.has(row.cluster_id) ?? false}
+                          onChange={() => onToggleSelect!(row.cluster_id)}
+                          className="h-4 w-4 rounded border-gray-300 accent-indigo-600"
+                        />
+                      </td>
+                    )}
                     <td className="whitespace-nowrap px-4 py-3 font-mono text-sm text-gray-700">
                       <div className="flex items-center gap-1.5">
                         {lowQuality && (

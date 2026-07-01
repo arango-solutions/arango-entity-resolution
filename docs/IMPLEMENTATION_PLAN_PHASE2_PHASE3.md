@@ -78,7 +78,15 @@ Ordered so each screen consumes backend capability that exists by the time it's 
 
 **Acceptance:** moving handles updates counts with no network call; "Apply" persists thresholds and (FS mode) migrates bands; Playwright: load → drag → apply → assert config changed.
 
-### 2.2 Cluster editing with audit trail (M)
+### 2.2 Cluster editing with audit trail (M) — **SHIPPED (2026-07-01)**
+
+> **Status:** All three mutations route through `FeedbackApplicationService` (suppress/confirm edges, scoped re-cluster under a lock) and audit to `er_audit_log`.
+> - Backend (`ui/routes/curation.py`): `POST .../cluster/{key}/remove-member`, `POST .../merge`, `POST .../cluster/{key}/split`, `GET .../suspect-clusters` (reads `er_repair_queue`, scoped to the collection's clusters). New service helpers `FeedbackApplicationService.remove_member` / `merge_members`. Readonly-guarded (403), lock-contention → 409.
+> - Frontend: `ClusterDetail` gains remove-member (highlighted member), split (selected edge), and an audit-history panel; `ClusterList` gains merge-mode multi-select; `ReviewPage` gains a **Suspect clusters** tab. All curation mutations invalidate cluster caches (`useCuration.ts`).
+> - Tests: `remove_member`/`merge_members` unit; curation route guards (unit) + full remove/merge/split/suspect **integration** (4/4 green on live ArangoDB).
+> - Deferred to 2.5: drag-partition split UI + Playwright e2e.
+
+
 
 **Backend (`ui/routes/curation.py`, thin over `FeedbackApplicationService` + `CurationService`):**
 - `POST /api/curation/{collection}/cluster/{key}/remove-member` `{member_key}` → suppress that member's intra-cluster edges, re-cluster, audit.

@@ -413,6 +413,23 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "MergeClustersRequest": {
+        "properties": {
+          "cluster_keys": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 2,
+            "title": "Cluster Keys",
+            "type": "array"
+          }
+        },
+        "required": [
+          "cluster_keys"
+        ],
+        "title": "MergeClustersRequest",
+        "type": "object"
+      },
       "PipelineRunRequest": {
         "properties": {
           "config": {
@@ -445,6 +462,19 @@
         "title": "PipelineRunResponse",
         "type": "object"
       },
+      "RemoveMemberRequest": {
+        "properties": {
+          "member_key": {
+            "title": "Member Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "member_key"
+        ],
+        "title": "RemoveMemberRequest",
+        "type": "object"
+      },
       "ResolveRequest": {
         "properties": {
           "confidence_threshold": {
@@ -475,6 +505,24 @@
           "fields"
         ],
         "title": "ResolveRequest",
+        "type": "object"
+      },
+      "SplitClusterRequest": {
+        "properties": {
+          "key_a": {
+            "title": "Key A",
+            "type": "string"
+          },
+          "key_b": {
+            "title": "Key B",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_a",
+          "key_b"
+        ],
+        "title": "SplitClusterRequest",
         "type": "object"
       },
       "ValidationError": {
@@ -1136,6 +1184,134 @@
         ]
       }
     },
+    "/api/curation/{collection}/cluster/{key}/remove-member": {
+      "post": {
+        "description": "Eject a member from a cluster (suppress its intra-cluster edges).",
+        "operationId": "remove_member_api_curation__collection__cluster__key__remove_member_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoveMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Remove Member Api Curation  Collection  Cluster  Key  Remove Member Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Member",
+        "tags": [
+          "curation"
+        ]
+      }
+    },
+    "/api/curation/{collection}/cluster/{key}/split": {
+      "post": {
+        "description": "Split a cluster by suppressing a bridge edge between two members.",
+        "operationId": "split_cluster_api_curation__collection__cluster__key__split_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SplitClusterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Split Cluster Api Curation  Collection  Cluster  Key  Split Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Split Cluster",
+        "tags": [
+          "curation"
+        ]
+      }
+    },
     "/api/curation/{collection}/history/{key}": {
       "get": {
         "description": "Return the audit trail (newest first) for a cluster/entity/pair key.",
@@ -1195,6 +1371,116 @@
           }
         },
         "summary": "Curation History",
+        "tags": [
+          "curation"
+        ]
+      }
+    },
+    "/api/curation/{collection}/merge": {
+      "post": {
+        "description": "Merge two or more clusters by confirming edges between representatives.",
+        "operationId": "merge_clusters_api_curation__collection__merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeClustersRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Merge Clusters Api Curation  Collection  Merge Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Merge Clusters",
+        "tags": [
+          "curation"
+        ]
+      }
+    },
+    "/api/curation/{collection}/suspect-clusters": {
+      "get": {
+        "description": "Pending entries from the cluster repair queue, scoped to this collection.",
+        "operationId": "suspect_clusters_api_curation__collection__suspect_clusters_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Suspect Clusters Api Curation  Collection  Suspect Clusters Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Suspect Clusters",
         "tags": [
           "curation"
         ]

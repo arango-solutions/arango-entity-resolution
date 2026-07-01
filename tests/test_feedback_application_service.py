@@ -323,6 +323,49 @@ def test_golden_record_deleted_on_auto_refresh():
     assert result["recluster"]["golden"]["deleted"] == 1
 
 
+def test_remove_member_suppresses_edges_and_reclusters():
+    db = _FakeDB()
+    svc = _service(db)
+    # Triangle A-B-C, cluster {A,B,C}.
+    ab = _add_edge(db, svc, "A", "B", 0.9)
+    bc = _add_edge(db, svc, "B", "C", 0.85)
+    _add_edge(db, svc, "A", "C", 0.8)
+    db._coll("person_clusters").docs["cluster_000000"] = {
+        "_key": "cluster_000000", "member_keys": ["A", "B", "C"], "size": 3,
+    }
+
+    result = svc.remove_member("B", ["A", "C"], actor="steward")
+
+    edges = db._coll("similarTo").docs
+    assert edges[ab]["suppressed"] is True  # B's edges suppressed
+    assert edges[bc]["suppressed"] is True
+    assert result["suppressed_edges"] == 2
+    # Remaining A-C edge keeps {A,C} together; B drops to singleton.
+    member_sets = sorted(tuple(c["member_keys"]) for c in db._coll("person_clusters").docs.values())
+    assert member_sets == [("A", "C")]
+
+
+def test_merge_members_confirms_edges_and_joins_clusters():
+    db = _FakeDB()
+    svc = _service(db)
+    _add_edge(db, svc, "A", "B", 0.9)
+    _add_edge(db, svc, "C", "D", 0.9)
+    db._coll("person_clusters").docs["c1"] = {"_key": "c1", "member_keys": ["A", "B"], "size": 2}
+    db._coll("person_clusters").docs["c2"] = {"_key": "c2", "member_keys": ["C", "D"], "size": 2}
+
+    result = svc.merge_members(["A", "C"], actor="steward")
+
+    assert result["confirmed_edges"] == 1
+    member_sets = sorted(tuple(c["member_keys"]) for c in db._coll("person_clusters").docs.values())
+    assert member_sets == [("A", "B", "C", "D")]
+
+
+def test_merge_members_requires_two_keys():
+    svc = _service(_FakeDB())
+    with pytest.raises(ValueError):
+        svc.merge_members(["A"])
+
+
 def test_golden_record_survives_when_cluster_unchanged():
     db = _FakeDB()
     svc = _service_with_golden(db)

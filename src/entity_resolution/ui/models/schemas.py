@@ -95,6 +95,20 @@ class ApplyThresholdRequest(BaseModel):
     run_id: Optional[str] = None
 
 
+class RemoveMemberRequest(BaseModel):
+    member_key: str
+
+
+class MergeClustersRequest(BaseModel):
+    cluster_keys: List[str] = Field(..., min_length=2)
+
+
+class SplitClusterRequest(BaseModel):
+    # The bridge edge (two member keys) to suppress, splitting the cluster.
+    key_a: str
+    key_b: str
+
+
 class ExportRequest(BaseModel):
     # Optional: when omitted the server writes to a temp dir so browser clients
     # do not need to know server filesystem paths.

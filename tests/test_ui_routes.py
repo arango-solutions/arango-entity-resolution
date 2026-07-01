@@ -707,6 +707,48 @@ class TestCuration:
         resp = client.get("/api/curation/bad@name/history/k1")
         assert resp.status_code in (400, 422)
 
+    # -- 2.2 cluster editing --
+
+    def test_remove_member_readonly_403(self, mock_db):
+        c = TestClient(create_app(db=mock_db, readonly=True))
+        resp = c.post("/api/curation/customers/cluster/c1/remove-member",
+                      json={"member_key": "A"})
+        assert resp.status_code == 403
+
+    def test_remove_member_cluster_not_found_404(self, client, mock_db):
+        mock_db.collection.return_value.get.return_value = None
+        resp = client.post("/api/curation/customers/cluster/c1/remove-member",
+                            json={"member_key": "A"})
+        assert resp.status_code == 404
+
+    def test_remove_member_not_in_cluster_400(self, client, mock_db):
+        mock_db.collection.return_value.get.return_value = {"member_keys": ["A", "B"]}
+        resp = client.post("/api/curation/customers/cluster/c1/remove-member",
+                            json={"member_key": "Z"})
+        assert resp.status_code == 400
+
+    def test_merge_readonly_403(self, mock_db):
+        c = TestClient(create_app(db=mock_db, readonly=True))
+        resp = c.post("/api/curation/customers/merge",
+                      json={"cluster_keys": ["c1", "c2"]})
+        assert resp.status_code == 403
+
+    def test_merge_requires_two_clusters_422(self, client):
+        resp = client.post("/api/curation/customers/merge", json={"cluster_keys": ["c1"]})
+        assert resp.status_code == 422
+
+    def test_split_not_in_cluster_400(self, client, mock_db):
+        mock_db.collection.return_value.get.return_value = {"member_keys": ["A", "B"]}
+        resp = client.post("/api/curation/customers/cluster/c1/split",
+                            json={"key_a": "A", "key_b": "Z"})
+        assert resp.status_code == 400
+
+    def test_suspect_clusters_empty(self, client, mock_db):
+        mock_db.has_collection.return_value = False
+        resp = client.get("/api/curation/customers/suspect-clusters")
+        assert resp.status_code == 200
+        assert resp.json()["clusters"] == []
+
 
 # ===================================================================
 # Threshold tuner metrics (plan 2.1)
