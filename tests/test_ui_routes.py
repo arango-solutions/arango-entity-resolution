@@ -348,6 +348,43 @@ class TestReview:
         assert "doc_a" in data
         assert "doc_b" in data
 
+    # -- 2.3 batch verdict + CSV export --
+
+    def test_batch_verdict_readonly_403(self, mock_db):
+        c = TestClient(create_app(db=mock_db, readonly=True))
+        resp = c.post("/api/review/customers/batch-verdict",
+                      json={"verdicts": [{"key_a": "a", "key_b": "b", "decision": "match"}]})
+        assert resp.status_code == 403
+
+    def test_batch_verdict_invalid_decision_422(self, client):
+        resp = client.post("/api/review/customers/batch-verdict",
+                            json={"verdicts": [{"key_a": "a", "key_b": "b", "decision": "maybe"}]})
+        assert resp.status_code == 422
+
+    def test_batch_verdict_empty_422(self, client):
+        resp = client.post("/api/review/customers/batch-verdict", json={"verdicts": []})
+        assert resp.status_code == 422
+
+    def test_batch_verdict_applies(self, client, mock_db):
+        resp = client.post(
+            "/api/review/customers/batch-verdict",
+            json={"verdicts": [
+                {"key_a": "a", "key_b": "b", "decision": "match", "confidence": 0.9},
+                {"key_a": "c", "key_b": "d", "decision": "no_match"},
+            ]},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["count"] == 2
+        assert "clusters_changed" in data
+
+    def test_export_csv_header(self, client, mock_db):
+        mock_db.has_collection.return_value = False  # no feedback -> header only
+        resp = client.get("/api/review/customers/export.csv")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/csv")
+        assert "key_a" in resp.text and "decision" in resp.text
+
 
 # ===================================================================
 # Pipeline

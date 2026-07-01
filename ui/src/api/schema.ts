@@ -706,6 +706,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/review/{collection}/batch-verdict": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch Verdict
+         * @description Apply many verdicts in one call (bulk actions from the review queue).
+         *
+         *     Each verdict is persisted and applied to the graph exactly like the
+         *     single-pair endpoint; results are aggregated and every applied pair writes
+         *     its own audit row. Per-pair failures (e.g. lock contention) are reported
+         *     without aborting the batch.
+         */
+        post: operations["batch_verdict_api_review__collection__batch_verdict_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/review/{collection}/export.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Verdicts Csv
+         * @description Export the (filtered) review queue as CSV.
+         */
+        get: operations["export_verdicts_csv_api_review__collection__export_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/review/{collection}/optimize": {
         parameters: {
             query?: never;
@@ -845,6 +890,22 @@ export interface components {
             run_id?: string | null;
             /** Threshold */
             threshold?: number | null;
+        };
+        /** BatchVerdictItem */
+        BatchVerdictItem: {
+            /** Confidence */
+            confidence?: number | null;
+            /** Decision */
+            decision: string;
+            /** Key A */
+            key_a: string;
+            /** Key B */
+            key_b: string;
+        };
+        /** BatchVerdictRequest */
+        BatchVerdictRequest: {
+            /** Verdicts */
+            verdicts: components["schemas"]["BatchVerdictItem"][];
         };
         /** ClusterGraphResponse */
         ClusterGraphResponse: {
@@ -2272,6 +2333,79 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    batch_verdict_api_review__collection__batch_verdict_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                collection: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchVerdictRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_verdicts_csv_api_review__collection__export_csv_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                source?: string | null;
+                min_score?: number | null;
+                max_score?: number | null;
+            };
+            header?: never;
+            path: {
+                collection: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

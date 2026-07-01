@@ -20,6 +20,7 @@ export function VerdictPanel({
 }: VerdictPanelProps) {
   const mutation = useSubmitVerdict();
   const [submitted, setSubmitted] = useState<VerdictType | null>(null);
+  const [confidence, setConfidence] = useState(1.0);
 
   const submit = useCallback(
     (verdict: VerdictType) => {
@@ -35,7 +36,7 @@ export function VerdictPanel({
       }
 
       mutation.mutate(
-        { collection, keyA, keyB, verdict: { decision: verdict } },
+        { collection, keyA, keyB, verdict: { decision: verdict, confidence } },
         {
           onSuccess: () => {
             setSubmitted(verdict);
@@ -47,7 +48,7 @@ export function VerdictPanel({
         },
       );
     },
-    [collection, keyA, keyB, mutation, onVerdictSubmitted, submitted],
+    [collection, keyA, keyB, mutation, onVerdictSubmitted, submitted, confidence],
   );
 
   useEffect(() => {
@@ -84,7 +85,17 @@ export function VerdictPanel({
   const busy = mutation.isPending;
 
   return (
-    <div className="flex items-center justify-center gap-3 pt-3">
+    <div className="flex flex-col items-center gap-2 pt-3">
+    <div className="flex items-center gap-2 text-xs text-gray-500">
+      <span>Confidence</span>
+      <input
+        type="range" min={0} max={1} step={0.05} value={confidence}
+        onChange={(e) => setConfidence(parseFloat(e.target.value))}
+        className="w-32 accent-indigo-600"
+      />
+      <span className="w-8 font-mono text-gray-700">{confidence.toFixed(2)}</span>
+    </div>
+    <div className="flex items-center justify-center gap-3">
       <button
         disabled={busy || submitted !== null}
         onClick={() => submit("match")}
@@ -151,6 +162,7 @@ export function VerdictPanel({
           S
         </kbd>
       </button>
+    </div>
     </div>
   );
 }

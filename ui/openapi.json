@@ -57,6 +57,57 @@
         "title": "ApplyThresholdRequest",
         "type": "object"
       },
+      "BatchVerdictItem": {
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "key_a": {
+            "title": "Key A",
+            "type": "string"
+          },
+          "key_b": {
+            "title": "Key B",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_a",
+          "key_b",
+          "decision"
+        ],
+        "title": "BatchVerdictItem",
+        "type": "object"
+      },
+      "BatchVerdictRequest": {
+        "properties": {
+          "verdicts": {
+            "items": {
+              "$ref": "#/components/schemas/BatchVerdictItem"
+            },
+            "minItems": 1,
+            "title": "Verdicts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "verdicts"
+        ],
+        "title": "BatchVerdictRequest",
+        "type": "object"
+      },
       "ClusterGraphResponse": {
         "properties": {
           "edges": {
@@ -2557,6 +2608,166 @@
           }
         },
         "summary": "List Verdicts",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/review/{collection}/batch-verdict": {
+      "post": {
+        "description": "Apply many verdicts in one call (bulk actions from the review queue).\n\nEach verdict is persisted and applied to the graph exactly like the\nsingle-pair endpoint; results are aggregated and every applied pair writes\nits own audit row. Per-pair failures (e.g. lock contention) are reported\nwithout aborting the batch.",
+        "operationId": "batch_verdict_api_review__collection__batch_verdict_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchVerdictRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Batch Verdict Api Review  Collection  Batch Verdict Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Batch Verdict",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/review/{collection}/export.csv": {
+      "get": {
+        "description": "Export the (filtered) review queue as CSV.",
+        "operationId": "export_verdicts_csv_api_review__collection__export_csv_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_score",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Score"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_score",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Score"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Verdicts Csv",
         "tags": [
           "review"
         ]

@@ -113,6 +113,40 @@ export function submitVerdict(
   );
 }
 
+export interface BatchVerdictItem {
+  key_a: string;
+  key_b: string;
+  decision: "match" | "no_match";
+  confidence?: number;
+}
+
+export interface BatchVerdictResponse {
+  status: string;
+  count: number;
+  applied: number;
+  clusters_changed: string[];
+  results: { key_a: string; key_b: string; applied?: string | null; error?: string }[];
+}
+
+export function batchVerdict(collection: string, verdicts: BatchVerdictItem[]) {
+  return fetchApi<BatchVerdictResponse>(`/api/review/${collection}/batch-verdict`, {
+    method: "POST",
+    body: JSON.stringify({ verdicts }),
+  });
+}
+
+/** URL for the CSV export of the (optionally filtered) review queue. */
+export function reviewCsvUrl(collection: string, filters?: ReviewFilters) {
+  const search = new URLSearchParams();
+  if (filters) {
+    for (const [k, v] of Object.entries(filters)) {
+      if (v != null && k !== "limit" && k !== "offset") search.set(k, String(v));
+    }
+  }
+  const qs = search.toString();
+  return `/api/review/${collection}/export.csv${qs ? `?${qs}` : ""}`;
+}
+
 export function optimizeThresholds(collection: string) {
   return fetchApi<ThresholdInfo>(`/api/review/${collection}/optimize`, {
     method: "POST",

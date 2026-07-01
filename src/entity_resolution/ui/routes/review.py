@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 
-from entity_resolution.ui.models.schemas import VerdictRequest
+from entity_resolution.ui.models.schemas import BatchVerdictRequest, VerdictRequest
 
 router = APIRouter(prefix="/api/review", tags=["review"])
 
@@ -200,6 +200,126 @@ async def submit_verdict(
         response["clusters_changed"] = []
 
     return response
+
+
+@router.post("/{collection}/batch-verdict")
+async def batch_verdict(
+    request: Request,
+    collection: str,
+    body: BatchVerdictRequest,
+) -> Dict[str, Any]:
+    """Apply many verdicts in one call (bulk actions from the review queue).
+
+    Each verdict is persisted and applied to the graph exactly like the
+    single-pair endpoint; results are aggregated and every applied pair writes
+    its own audit row. Per-pair failures (e.g. lock contention) are reported
+    without aborting the batch.
+    """
+    from entity_resolution.reasoning.feedback import FeedbackStore
+    from entity_resolution.services.curation_service import CurationService
+    from entity_resolution.services.feedback_application_service import (
+        FeedbackApplicationError,
+        FeedbackApplicationService,
+    )
+    from entity_resolution.ui.routes.collections import resolve_collection_name
+    from entity_resolution.utils.validation import validate_collection_name
+
+    if request.app.state.readonly:
+        raise HTTPException(status_code=403, detail="Read-only mode")
+
+    validate_collection_name(collection)
+    for v in body.verdicts:
+        if v.decision not in ("match", "no_match"):
+            raise HTTPException(status_code=422, detail="decision must be match or no_match")
+
+    db = _db(request)
+    fb_coll = _feedback_collection(collection)
+    store = FeedbackStore(db, collection=fb_coll)
+    curation = CurationService(db)
+    actor = getattr(request.state, "reviewer", None) or "human"
+
+    edge_coll = resolve_collection_name(request, f"{collection}_similarity_edges")
+    cluster_coll = resolve_collection_name(request, f"{collection}_clusters")
+    golden_coll = resolve_collection_name(request, f"{collection}_golden_records")
+    applier = None
+    if db.has_collection(edge_coll):
+        applier = FeedbackApplicationService(
+            db=db, edge_collection=edge_coll, vertex_collection=collection,
+            cluster_collection=cluster_coll, golden_collection=golden_coll,
+        )
+
+    results: List[Dict[str, Any]] = []
+    clusters_changed: set = set()
+    applied_count = 0
+    for v in body.verdicts:
+        doc_key = store.record_human_correction(
+            key_a=v.key_a, key_b=v.key_b, correct_decision=v.decision,
+            confidence=v.confidence if v.confidence is not None else 1.0, reviewer=actor,
+        )
+        try:
+            curation.record(actor=actor, action="verdict", collection=collection,
+                            entity_key=doc_key,
+                            after={"key_a": v.key_a, "key_b": v.key_b, "decision": v.decision})
+        except Exception:
+            pass
+        if applier is None:
+            results.append({"key_a": v.key_a, "key_b": v.key_b, "applied": None})
+            continue
+        try:
+            r = applier.apply_and_recluster(v.key_a, v.key_b, v.decision, actor=actor)
+            clusters_changed.update(r["recluster"]["cluster_keys"])
+            applied_count += 1
+            results.append({"key_a": v.key_a, "key_b": v.key_b, "applied": r["verdict"]["action"]})
+        except FeedbackApplicationError as exc:
+            results.append({"key_a": v.key_a, "key_b": v.key_b, "error": str(exc)})
+
+    return {
+        "status": "ok",
+        "count": len(results),
+        "applied": applied_count,
+        "clusters_changed": sorted(clusters_changed),
+        "results": results,
+    }
+
+
+@router.get("/{collection}/export.csv")
+async def export_verdicts_csv(
+    request: Request,
+    collection: str,
+    status: Optional[str] = None,
+    source: Optional[str] = None,
+    min_score: Optional[float] = None,
+    max_score: Optional[float] = None,
+) -> Response:
+    """Export the (filtered) review queue as CSV."""
+    import csv
+    import io
+
+    from entity_resolution.reasoning.feedback import FeedbackStore
+    from entity_resolution.utils.validation import validate_collection_name
+
+    validate_collection_name(collection)
+    db = _db(request)
+    fb_coll = _feedback_collection(collection)
+
+    columns = ["key_a", "key_b", "score", "decision", "confidence", "source", "reviewer", "ts"]
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    if db.has_collection(fb_coll):
+        store = FeedbackStore(db, collection=fb_coll)
+        result = store.query_verdicts(
+            status=status, score_min=min_score, score_max=max_score,
+            source=source, limit=100000, offset=0,
+        )
+        for row in result.get("items", []):
+            writer.writerow({c: row.get(c) for c in columns})
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={collection}_review.csv"},
+    )
 
 
 @router.post("/{collection}/optimize")

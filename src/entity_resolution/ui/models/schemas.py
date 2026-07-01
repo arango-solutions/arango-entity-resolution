@@ -95,6 +95,17 @@ class ApplyThresholdRequest(BaseModel):
     run_id: Optional[str] = None
 
 
+class BatchVerdictItem(BaseModel):
+    key_a: str
+    key_b: str
+    decision: str  # "match" | "no_match"
+    confidence: Optional[float] = None
+
+
+class BatchVerdictRequest(BaseModel):
+    verdicts: List[BatchVerdictItem] = Field(..., min_length=1)
+
+
 class RemoveMemberRequest(BaseModel):
     member_key: str
 

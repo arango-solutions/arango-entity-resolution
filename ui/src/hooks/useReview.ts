@@ -3,6 +3,8 @@ import {
   getReviewQueue,
   getReviewStats,
   submitVerdict,
+  batchVerdict,
+  type BatchVerdictItem,
   type ReviewFilters,
   type VerdictRequest,
 } from "../api/review";
@@ -44,6 +46,25 @@ export function useSubmitVerdict() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["review-queue"] });
       void queryClient.invalidateQueries({ queryKey: ["review-stats"] });
+    },
+  });
+}
+
+export function useBatchVerdict() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      collection,
+      verdicts,
+    }: {
+      collection: string;
+      verdicts: BatchVerdictItem[];
+    }) => batchVerdict(collection, verdicts),
+    onSuccess: () => {
+      for (const k of ["review-queue", "review-stats", "clusters", "cluster-detail", "cluster-graph", "cluster-stats"]) {
+        void queryClient.invalidateQueries({ queryKey: [k] });
+      }
     },
   });
 }
